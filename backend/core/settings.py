@@ -45,12 +45,11 @@ DATABASES = {
 }
 
 
+
+
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 
 STATIC_URL = '/static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-# Render deployment
-import os
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'

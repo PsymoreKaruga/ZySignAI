@@ -168,5 +168,8 @@ frontend\app\Note.txt
 
 # Notes and temp files
 frontend/app/Note.txt
+# Allow backend config files
+!backend/requirements.txt
+!backend/runtime.txt
 *.txt
 frontend/.gitignore1
