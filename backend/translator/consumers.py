@@ -13,7 +13,7 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
         await self.accept()
         await self.send(json.dumps({
             'type': 'status',
-            'message': 'SignLingo engine connected'
+            'message': 'ZySignAI engine connected'
         }))
 
     async def disconnect(self, code):
@@ -26,7 +26,7 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
     async def process_audio(self, audio_bytes):
         try:
             with tempfile.NamedTemporaryFile(
-                suffix='.webm',
+                suffix='.wav',
                 delete=False
             ) as tmp:
                 tmp.write(audio_bytes)
@@ -35,7 +35,7 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
             with open(tmp_path, 'rb') as audio_file:
                 response = await client.audio.transcriptions.create(
                     model='whisper-large-v3',
-                    file=audio_file,
+                    file=('audio.wav', audio_file, 'audio/wav'),
                     response_format='json'
                 )
 
