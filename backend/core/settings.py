@@ -16,6 +16,7 @@ INSTALLED_APPS = [
     'django.contrib.auth',
     'channels',
     'translator',
+    
 ]
 
 MIDDLEWARE = [
@@ -46,7 +47,8 @@ DATABASES = {
     }
 }
 
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+
+GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 
 STATIC_URL = '/static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

@@ -1,12 +1,11 @@
 import json
-import base64
 import tempfile
 import os
 from channels.generic.websocket import AsyncWebsocketConsumer
-from openai import AsyncOpenAI
+from groq import AsyncGroq
 from django.conf import settings
 
-client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+client = AsyncGroq(api_key=settings.GROQ_API_KEY)
 
 class TranscribeConsumer(AsyncWebsocketConsumer):
 
@@ -14,7 +13,7 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
         await self.accept()
         await self.send(json.dumps({
             'type': 'status',
-            'message': 'Connected to ZySignAI engine'
+            'message': 'SignLingo engine connected'
         }))
 
     async def disconnect(self, code):
@@ -26,17 +25,16 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
 
     async def process_audio(self, audio_bytes):
         try:
-            # Save audio chunk to temp file
             with tempfile.NamedTemporaryFile(
-                suffix='.webm', delete=False
+                suffix='.webm',
+                delete=False
             ) as tmp:
                 tmp.write(audio_bytes)
                 tmp_path = tmp.name
 
-            # Send to Whisper
             with open(tmp_path, 'rb') as audio_file:
                 response = await client.audio.transcriptions.create(
-                    model='whisper-1',
+                    model='whisper-large-v3',
                     file=audio_file,
                     response_format='json'
                 )
@@ -48,8 +46,7 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
             if transcript:
                 await self.send(json.dumps({
                     'type': 'transcript',
-                    'text': transcript,
-                    'language': 'en'  # auto-detect later
+                    'text': transcript
                 }))
 
         except Exception as e:
