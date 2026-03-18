@@ -1,0 +1,172 @@
+# ================================
+# ZySignAI — Master .gitignore
+# ================================
+
+# CRITICAL — API keys, never commit
+backend/.env
+backend/.env.local
+backend/.env.production
+
+# Python virtual environment
+backend/dreams/
+backend/venv/
+backend/env/
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+
+# Django
+backend/db.sqlite3
+backend/staticfiles/
+backend/media/
+
+# Next.js dependencies
+frontend/node_modules/
+frontend/.pnp
+frontend/.pnp.*
+
+# Next.js build output
+frontend/.next/
+frontend/out/
+frontend/build
+
+# Next.js env files
+frontend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+frontend/.env.production
+
+# Vercel
+frontend/.vercel
+
+# TypeScript
+frontend/*.tsbuildinfo
+frontend/next-env.d.ts
+
+# Testing
+frontend/coverage/
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Logs
+*.log
+
+
+
+
+
+
+
+
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+
+
+
+# Dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Next.js
+/.next/
+/out/
+/build
+
+# Testing
+/coverage
+
+# Environment files - NEVER commit
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.production
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+*.pem
+
+frontend\app\Note.txt
+
+# Notes and temp files
+frontend/app/Note.txt
+*.txt
+frontend/.gitignore1
