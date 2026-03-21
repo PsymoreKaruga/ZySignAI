@@ -18,10 +18,25 @@ export async function POST(req: NextRequest) {
     }
 
     const count = await redis.llen('waitlist')
-    const entries = await redis.lrange('waitlist', 0, -1) as string[]
+    const raw = await redis.lrange('waitlist', 0, -1)
 
-    const signups = entries
-      .map(e => { try { return JSON.parse(e) } catch { return null } })
+    const signups = raw
+      .map((e: any) => {
+        try {
+          // Handle both string and already-parsed object
+          const parsed = typeof e === 'string' ? JSON.parse(e) : e
+          return {
+            name: parsed.name || 'Anonymous',
+            email: parsed.email || '—',
+            type: parsed.type || 'general',
+            country: parsed.country || 'Unknown',
+            flag: parsed.flag || '🌍',
+            date: parsed.date || '',
+          }
+        } catch {
+          return null
+        }
+      })
       .filter(Boolean)
 
     const byType: Record<string, number> = {}
@@ -29,11 +44,9 @@ export async function POST(req: NextRequest) {
     const byFlag: Record<string, string> = {}
 
     signups.forEach((s: any) => {
-      const type = s.type || 'general'
-      byType[type] = (byType[type] || 0) + 1
-      const country = s.country || 'Unknown'
-      byCountry[country] = (byCountry[country] || 0) + 1
-      if (s.flag) byFlag[country] = s.flag
+      byType[s.type] = (byType[s.type] || 0) + 1
+      byCountry[s.country] = (byCountry[s.country] || 0) + 1
+      if (s.flag && s.flag !== '🌍') byFlag[s.country] = s.flag
     })
 
     return NextResponse.json({
@@ -44,7 +57,8 @@ export async function POST(req: NextRequest) {
       byFlag,
     })
 
-  } catch {
+  } catch (error) {
+    console.error('Admin error:', error)
     return NextResponse.json({ error: 'Server error' }, { status: 500 })
   }
 }
