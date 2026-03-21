@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import HandAvatar from '../components/HandAvatar'
+import HandAvatar from './components/HandAvatar'
 
 type Msg = { type: string; text?: string; message?: string }
 
