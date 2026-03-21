@@ -1,7 +1,13 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import type { Metadata } from 'next'
 import HandAvatar from './components/HandAvatar'
 import WaitlistForm from './components/WaitlistForm'
+
+export const metadata: Metadata = {
+  title: 'Live Sign Language Translator',
+  description: 'Try ZySignAI free — speak and watch an AI avatar sign your words in real time. Supports ASL, BSL, KSL, CSL, LSF and Auslan.',
+}
 
 type Msg = { type: string; text?: string; message?: string }
 
