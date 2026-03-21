@@ -11,6 +11,7 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
 
     async def connect(self):
         await self.accept()
+        self.current_language = 'ASL'
         await self.send(json.dumps({
             'type': 'status',
             'message': 'ZySignAI engine connected'
@@ -22,9 +23,19 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
     async def receive(self, text_data=None, bytes_data=None):
         if bytes_data:
             await self.process_audio(bytes_data)
+        elif text_data:
+            try:
+                data = json.loads(text_data)
+                if data.get('type') == 'language_change':
+                    self.current_language = data.get('language', 'ASL')
+                    await self.send(json.dumps({
+                        'type': 'status',
+                        'message': f'Switching to {self.current_language}'
+                    }))
+            except Exception:
+                pass
 
     async def process_audio(self, audio_bytes):
-        # Skip silent or empty chunks
         if len(audio_bytes) < 1000:
             return
 
@@ -50,11 +61,11 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
                 await self.send(json.dumps({
                     'type': 'transcript',
                     'text': transcript,
-                    'language': getattr(response, 'language', 'en')
+                    'language': getattr(response, 'language', 'en'),
+                    'sign_language': self.current_language
                 }))
 
         except Exception as e:
-            # Only send error if it's not a silence/empty audio error
             error_msg = str(e)
             if 'could not process' not in error_msg.lower():
                 await self.send(json.dumps({
@@ -65,5 +76,5 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
             if tmp_path and os.path.exists(tmp_path):
                 try:
                     os.unlink(tmp_path)
-                except:
+                except Exception:
                     pass

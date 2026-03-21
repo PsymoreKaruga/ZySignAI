@@ -61,11 +61,75 @@ export default function ZySignAI() {
             e.data.arrayBuffer().then(buf => socket.send(buf))
           }
         }
+        
+
+
+
+
+
+
 
         rec.start(3000)
+
+
+        const rec = mimeType
+  ? new MediaRecorder(mic, { mimeType })
+  : new MediaRecorder(mic)
+
+recorder.current = rec
+
+rec.ondataavailable = (e) => {
+  if (e.data.size > 0 && socket.readyState === WebSocket.OPEN) {
+    e.data.arrayBuffer().then(buf => socket.send(buf))
+  }
+}
+
+rec.onstop = () => {
+  // Auto restart recorder to keep it alive
+  if (listening && stream.current) {
+    try {
+      rec.start(3000)
+    } catch {}
+  }
+}
+
+rec.onerror = () => {
+  // Restart on error
+  if (listening && stream.current) {
+    try {
+      const newRec = mimeType
+        ? new MediaRecorder(mic, { mimeType })
+        : new MediaRecorder(mic)
+      recorder.current = newRec
+      newRec.ondataavailable = rec.ondataavailable
+      newRec.start(3000)
+    } catch {}
+  }
+}
+
+rec.start(3000)
+
+
+
         setListening(true)
         setStatus('Listening — speak now')
       }
+
+
+
+      // Send language change to backend instantly
+useEffect(() => {
+  if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+    ws.current.send(JSON.stringify({
+      type: 'language_change',
+      language: language
+    }))
+    setStatus('Switching to ' + language)
+  }
+}, [language])
+
+
+
 
       socket.onmessage = (e) => {
         const data: Msg = JSON.parse(e.data)
@@ -77,7 +141,18 @@ export default function ZySignAI() {
         if (data.type === 'error')  setStatus('Error: ' + data.message)
       }
 
-      socket.onclose = () => { setConnected(false); setStatus('Disconnected') }
+      socket.onclose = () => { setConnected(false); setStatus('Disconnected') 
+        socket.onclose = () => {
+  setConnected(false)
+  setStatus('Reconnecting...')
+  // Auto reconnect after 2 seconds if user is still listening
+  setTimeout(() => {
+    if (listening) {
+      start()
+    }
+  }, 2000)
+}
+      }
       socket.onerror = () => setStatus('Cannot connect — make sure Django is running')
 
     } catch {
