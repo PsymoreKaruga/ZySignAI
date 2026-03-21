@@ -22,6 +22,10 @@ export default function ZySignAI() {
   const transcriptQueue  = useRef<string[]>([])
   const processingQueue  = useRef(false)
 
+  const heartbeatInterval = useRef<NodeJS.Timeout | null>(null)
+  const lastTranscriptTime = useRef<number>(Date.now())
+  const heartbeatMissed = useRef(0)
+
   // Keep languageRef in sync so callbacks always have latest language
   useEffect(() => {
     languageRef.current = language
@@ -67,6 +71,58 @@ export default function ZySignAI() {
     processNext()
   }
 
+
+
+  const startHeartbeat = (socket: WebSocket) => {
+  // Clear any existing heartbeat
+  if (heartbeatInterval.current) {
+    clearInterval(heartbeatInterval.current)
+  }
+
+  heartbeatInterval.current = setInterval(() => {
+    const now = Date.now()
+    const secondsSinceLastTranscript = (now - lastTranscriptTime.current) / 1000
+
+    // Check if socket is still alive
+    if (socket.readyState !== WebSocket.OPEN) {
+      setStatus('Connection lost — reconnecting...')
+      clearInterval(heartbeatInterval.current!)
+      if (listeningRef.current) start()
+      return
+    }
+
+    // Send ping to keep connection alive
+    try {
+      socket.send(JSON.stringify({ type: 'ping' }))
+    } catch {
+      clearInterval(heartbeatInterval.current!)
+      if (listeningRef.current) start()
+      return
+    }
+
+    // If no transcript for 30+ seconds while listening — restart
+    if (listeningRef.current && secondsSinceLastTranscript > 30) {
+      heartbeatMissed.current++
+      setStatus(`Reconnecting... (${heartbeatMissed.current})`)
+
+      if (heartbeatMissed.current >= 2) {
+        heartbeatMissed.current = 0
+        clearInterval(heartbeatInterval.current!)
+        // Full restart
+        recorder.current?.stop()
+        socket.close()
+      }
+    } else {
+      heartbeatMissed.current = 0
+    }
+  }, 10000) // Check every 10 seconds
+}
+
+
+
+
+
+
   const wakeBackend = async () => {
     try {
       await fetch('https://zysignai-backend.onrender.com/api/health/')
@@ -90,6 +146,10 @@ export default function ZySignAI() {
       socket.onopen = async () => {
         setConnected(true)
         setStatus('Microphone starting...')
+        setConnected(true)
+        lastTranscriptTime.current = Date.now()
+        heartbeatMissed.current = 0
+        startHeartbeat(socket)
 
         const mic = await navigator.mediaDevices.getUserMedia({ audio: true })
         stream.current = mic
@@ -141,17 +201,30 @@ export default function ZySignAI() {
         setStatus('Listening — speak now')
       }
 
-      socket.onmessage = (e) => {
-        const data: Msg = JSON.parse(e.data)
+      
+        
 
-        if (data.type === 'transcript' && data.text) {
-          // Push to queue — never lose a word even if server is slow
-          transcriptQueue.current.push(data.text)
-          processQueue()
-        }
-        if (data.type === 'status') setStatus(data.message ?? '')
-        if (data.type === 'error')  setStatus('Error: ' + data.message)
-      }
+
+
+
+    socket.onmessage = (e) => {
+      const data: Msg = JSON.parse(e.data)
+
+       if (data.type === 'transcript' && data.text) {
+      lastTranscriptTime.current = Date.now() // Reset timer
+      heartbeatMissed.current = 0
+      transcriptQueue.current.push(data.text)
+     processQueue()
+     }
+      if (data.type === 'pong') {
+      lastTranscriptTime.current = Date.now() // Server is alive
+    }
+    if (data.type === 'status') setStatus(data.message ?? '')
+    if (data.type === 'error')  setStatus('Error: ' + data.message)
+  }
+
+
+
 
       socket.onclose = () => {
         setConnected(false)
@@ -170,17 +243,33 @@ export default function ZySignAI() {
     }
   }
 
-  const stop = () => {
-    listeningRef.current = false
-    recorder.current?.stop()
-    stream.current?.getTracks().forEach(t => t.stop())
-    ws.current?.close()
-    setListening(false)
-    setConnected(false)
-    setStatus('Ready')
-    transcriptQueue.current = []
-    setBuffered(0)
+  
+
+
+
+
+
+
+const stop = () => {
+  listeningRef.current = false
+  if (heartbeatInterval.current) {
+    clearInterval(heartbeatInterval.current)
   }
+  recorder.current?.stop()
+  stream.current?.getTracks().forEach(t => t.stop())
+  ws.current?.close()
+  setListening(false)
+  setConnected(false)
+  setStatus('Ready')
+  transcriptQueue.current = []
+  setBuffered(0)
+}
+
+
+
+
+
+
 
   return (
     <main className="min-h-screen bg-gray-950 text-white flex flex-col items-center p-8">

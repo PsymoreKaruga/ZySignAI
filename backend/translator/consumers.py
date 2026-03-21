@@ -26,7 +26,9 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
         elif text_data:
             try:
                 data = json.loads(text_data)
-                if data.get('type') == 'language_change':
+                if data.get('type') == 'ping':
+                    await self.send(json.dumps({'type': 'pong'}))
+                elif data.get('type') == 'language_change':
                     self.current_language = data.get('language', 'ASL')
                     await self.send(json.dumps({
                         'type': 'status',
@@ -42,7 +44,7 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
         tmp_path = None
         try:
             with tempfile.NamedTemporaryFile(
-                suffix='.webm',
+                suffix='.mp4',
                 delete=False
             ) as tmp:
                 tmp.write(audio_bytes)
@@ -51,8 +53,9 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
             with open(tmp_path, 'rb') as audio_file:
                 response = await client.audio.transcriptions.create(
                     model='whisper-large-v3-turbo',
-                    file=('audio.webm', audio_file, 'audio/webm'),
-                    response_format='verbose_json'
+                    file=('audio.mp4', audio_file, 'audio/mp4'),
+                    response_format='json',
+                    language='en'
                 )
 
             transcript = response.text.strip()
@@ -61,7 +64,6 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
                 await self.send(json.dumps({
                     'type': 'transcript',
                     'text': transcript,
-                    'language': getattr(response, 'language', 'en'),
                     'sign_language': self.current_language
                 }))
 
