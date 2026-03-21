@@ -1,7 +1,7 @@
 import json
 import tempfile
 import os
-import asyncio
+import io
 from channels.generic.websocket import AsyncWebsocketConsumer
 from groq import AsyncGroq
 from django.conf import settings
@@ -15,8 +15,7 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
         self.current_language = 'ASL'
         self.audio_buffer = []
         self.buffer_size = 0
-        self.MIN_AUDIO_SIZE = 8000   # 8KB minimum before sending to Groq
-        self.MAX_BUFFER_SIZE = 500000 # 500KB maximum buffer
+        self.MIN_AUDIO_SIZE = 10000  # 10KB minimum
         await self.send(json.dumps({
             'type': 'status',
             'message': 'ZySignAI engine connected'
@@ -41,76 +40,87 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
                         'message': f'Switching to {self.current_language}'
                     }))
                 elif data.get('type') == 'flush':
-                    # Force process whatever is in buffer
                     if self.audio_buffer:
                         await self.process_buffer()
             except Exception:
                 pass
 
     async def handle_audio(self, chunk: bytes):
-        # Skip tiny chunks — silence or noise
         if len(chunk) < 500:
             return
-
         self.audio_buffer.append(chunk)
         self.buffer_size += len(chunk)
-
-        # Process when buffer is large enough
         if self.buffer_size >= self.MIN_AUDIO_SIZE:
             await self.process_buffer()
 
     async def process_buffer(self):
         if not self.audio_buffer:
             return
-
-        # Grab current buffer and reset
         chunks = self.audio_buffer[:]
         self.audio_buffer = []
         self.buffer_size = 0
-
         audio_bytes = b''.join(chunks)
-
-        # Still too small — skip
         if len(audio_bytes) < 3000:
             return
-
         await self.transcribe(audio_bytes)
 
     async def transcribe(self, audio_bytes: bytes):
-        tmp_path = None
+        tmp_input = None
+        tmp_wav = None
         try:
-            # Write to temp file with correct extension
+            # Step 1 — write raw webm to temp file
             with tempfile.NamedTemporaryFile(
                 suffix='.webm',
                 delete=False,
                 mode='wb'
-            ) as tmp:
-                tmp.write(audio_bytes)
-                tmp_path = tmp.name
+            ) as f:
+                f.write(audio_bytes)
+                tmp_input = f.name
 
-            # Verify file was written properly
-            file_size = os.path.getsize(tmp_path)
-            if file_size < 1000:
+            # Step 2 — convert to WAV using pydub + ffmpeg
+            wav_path = tmp_input.replace('.webm', '.wav')
+            tmp_wav = wav_path
+
+            try:
+                from pydub import AudioSegment
+                audio = AudioSegment.from_file(tmp_input, format='webm')
+                audio = audio.set_frame_rate(16000).set_channels(1)
+                audio.export(wav_path, format='wav')
+            except Exception:
+                # pydub failed — try direct ffmpeg
+                import subprocess
+                result = subprocess.run([
+                    'ffmpeg', '-y', '-i', tmp_input,
+                    '-ar', '16000', '-ac', '1',
+                    '-f', 'wav', wav_path
+                ], capture_output=True, timeout=15)
+                if result.returncode != 0:
+                    # Last resort — send raw as mp4
+                    await self.try_raw_fallback(audio_bytes)
+                    return
+
+            # Step 3 — verify wav file exists and has content
+            if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 1000:
+                await self.try_raw_fallback(audio_bytes)
                 return
 
-            with open(tmp_path, 'rb') as audio_file:
+            # Step 4 — send WAV to Groq
+            with open(wav_path, 'rb') as audio_file:
                 response = await client.audio.transcriptions.create(
                     model='whisper-large-v3-turbo',
-                    file=('audio.webm', audio_file, 'audio/webm'),
+                    file=('audio.wav', audio_file, 'audio/wav'),
                     response_format='json',
                     language='en'
                 )
 
             transcript = response.text.strip()
 
-            # Filter out noise transcriptions
-            noise_phrases = [
-                'you', 'thank you', 'thank you.',
-                'thanks for watching', 'bye', '.',
-                'the', '', ' '
+            noise = [
+                'you', 'thank you', 'thank you.', 'thanks for watching',
+                'bye', '.', 'the', '', ' ', 'Thanks for watching!'
             ]
 
-            if transcript and transcript.lower() not in noise_phrases:
+            if transcript and transcript.lower() not in [n.lower() for n in noise]:
                 await self.send(json.dumps({
                     'type': 'transcript',
                     'text': transcript,
@@ -119,33 +129,30 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
 
         except Exception as e:
             error_msg = str(e)
-            # Only send meaningful errors to frontend
-            if 'could not process' in error_msg.lower():
-                # Audio format issue — try mp4 fallback
-                await self.try_mp4_fallback(audio_bytes)
-            else:
+            if 'could not process' not in error_msg.lower():
                 await self.send(json.dumps({
                     'type': 'error',
-                    'message': f'Transcription error: {error_msg[:100]}'
+                    'message': error_msg[:120]
                 }))
         finally:
-            if tmp_path and os.path.exists(tmp_path):
-                try:
-                    os.unlink(tmp_path)
-                except Exception:
-                    pass
+            for path in [tmp_input, tmp_wav]:
+                if path and os.path.exists(path):
+                    try:
+                        os.unlink(path)
+                    except Exception:
+                        pass
 
-    async def try_mp4_fallback(self, audio_bytes: bytes):
-        """Fallback — try sending as mp4 if webm fails"""
+    async def try_raw_fallback(self, audio_bytes: bytes):
+        """Last resort — send raw bytes as mp4"""
         tmp_path = None
         try:
             with tempfile.NamedTemporaryFile(
                 suffix='.mp4',
                 delete=False,
                 mode='wb'
-            ) as tmp:
-                tmp.write(audio_bytes)
-                tmp_path = tmp.name
+            ) as f:
+                f.write(audio_bytes)
+                tmp_path = f.name
 
             with open(tmp_path, 'rb') as audio_file:
                 response = await client.audio.transcriptions.create(
@@ -162,9 +169,7 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
                     'text': transcript,
                     'sign_language': self.current_language
                 }))
-
         except Exception:
-            # Silent fail on fallback
             pass
         finally:
             if tmp_path and os.path.exists(tmp_path):
