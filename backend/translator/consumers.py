@@ -1,29 +1,34 @@
 import json
 import tempfile
 import os
-import io
 from channels.generic.websocket import AsyncWebsocketConsumer
 from groq import AsyncGroq
 from django.conf import settings
 
 client = AsyncGroq(api_key=settings.GROQ_API_KEY)
 
+NOISE = {
+    'you', 'thank you', 'thank you.', 'thanks for watching',
+    'bye', '.', 'the', '', ' ', 'thanks for watching!',
+    'thank you so much', 'please', 'subscribe', '...'
+}
+
 class TranscribeConsumer(AsyncWebsocketConsumer):
 
     async def connect(self):
         await self.accept()
         self.current_language = 'ASL'
-        self.audio_buffer = []
-        self.buffer_size = 0
-        self.MIN_AUDIO_SIZE = 10000  # 10KB minimum
+        self.chunks = []
+        self.chunk_count = 0
+        self.CHUNKS_BEFORE_SEND = 2  # Send every 2 chunks = ~10 seconds
         await self.send(json.dumps({
             'type': 'status',
             'message': 'ZySignAI engine connected'
         }))
 
     async def disconnect(self, code):
-        self.audio_buffer = []
-        self.buffer_size = 0
+        self.chunks = []
+        self.chunk_count = 0
 
     async def receive(self, text_data=None, bytes_data=None):
         if bytes_data:
@@ -31,96 +36,94 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
         elif text_data:
             try:
                 data = json.loads(text_data)
-                if data.get('type') == 'ping':
+                msg_type = data.get('type')
+                if msg_type == 'ping':
                     await self.send(json.dumps({'type': 'pong'}))
-                elif data.get('type') == 'language_change':
+                elif msg_type == 'language_change':
                     self.current_language = data.get('language', 'ASL')
                     await self.send(json.dumps({
                         'type': 'status',
                         'message': f'Switching to {self.current_language}'
                     }))
-                elif data.get('type') == 'flush':
-                    if self.audio_buffer:
-                        await self.process_buffer()
+                elif msg_type == 'flush':
+                    if self.chunks:
+                        await self.process_chunks()
             except Exception:
                 pass
 
     async def handle_audio(self, chunk: bytes):
-        if len(chunk) < 500:
+        # Ignore silence
+        if len(chunk) < 1000:
             return
-        self.audio_buffer.append(chunk)
-        self.buffer_size += len(chunk)
-        if self.buffer_size >= self.MIN_AUDIO_SIZE:
-            await self.process_buffer()
 
-    async def process_buffer(self):
-        if not self.audio_buffer:
-            return
-        chunks = self.audio_buffer[:]
-        self.audio_buffer = []
-        self.buffer_size = 0
-        audio_bytes = b''.join(chunks)
-        if len(audio_bytes) < 3000:
-            return
-        await self.transcribe(audio_bytes)
+        # Each chunk is independent — do NOT accumulate across chunks
+        # Send each chunk directly to Groq
+        await self.transcribe_chunk(chunk)
 
-    async def transcribe(self, audio_bytes: bytes):
-        tmp_input = None
-        tmp_wav = None
+    async def transcribe_chunk(self, audio_bytes: bytes):
+        tmp_path = None
         try:
-            # Step 1 — write raw webm to temp file
+            # Try WAV conversion first via ffmpeg
+            import subprocess
+
             with tempfile.NamedTemporaryFile(
-                suffix='.webm',
-                delete=False,
-                mode='wb'
+                suffix='.webm', delete=False, mode='wb'
             ) as f:
                 f.write(audio_bytes)
-                tmp_input = f.name
+                tmp_path = f.name
 
-            # Step 2 — convert to WAV using pydub + ffmpeg
-            wav_path = tmp_input.replace('.webm', '.wav')
-            tmp_wav = wav_path
+            wav_path = tmp_path.replace('.webm', '.wav')
 
-            try:
-                from pydub import AudioSegment
-                audio = AudioSegment.from_file(tmp_input, format='webm')
-                audio = audio.set_frame_rate(16000).set_channels(1)
-                audio.export(wav_path, format='wav')
-            except Exception:
-                # pydub failed — try direct ffmpeg
-                import subprocess
-                result = subprocess.run([
-                    'ffmpeg', '-y', '-i', tmp_input,
-                    '-ar', '16000', '-ac', '1',
-                    '-f', 'wav', wav_path
-                ], capture_output=True, timeout=15)
-                if result.returncode != 0:
-                    # Last resort — send raw as mp4
-                    await self.try_raw_fallback(audio_bytes)
-                    return
+            # Convert to WAV
+            convert = subprocess.run(
+                [
+                    'ffmpeg', '-y',
+                    '-i', tmp_path,
+                    '-ar', '16000',
+                    '-ac', '1',
+                    '-f', 'wav',
+                    wav_path
+                ],
+                capture_output=True,
+                timeout=10
+            )
 
-            # Step 3 — verify wav file exists and has content
-            if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 1000:
-                await self.try_raw_fallback(audio_bytes)
-                return
+            if convert.returncode == 0 and os.path.exists(wav_path):
+                await self.send_to_groq(wav_path, 'audio.wav', 'audio/wav')
+            else:
+                # ffmpeg failed — send raw webm
+                await self.send_to_groq(tmp_path, 'audio.webm', 'audio/webm')
 
-            # Step 4 — send WAV to Groq
-            with open(wav_path, 'rb') as audio_file:
+        except FileNotFoundError:
+            # ffmpeg not installed — send raw
+            if tmp_path:
+                await self.send_to_groq(tmp_path, 'audio.webm', 'audio/webm')
+        except Exception as e:
+            await self.send(json.dumps({
+                'type': 'error',
+                'message': str(e)[:100]
+            }))
+        finally:
+            for path in [tmp_path, tmp_path.replace('.webm', '.wav') if tmp_path else None]:
+                if path and os.path.exists(path):
+                    try:
+                        os.unlink(path)
+                    except Exception:
+                        pass
+
+    async def send_to_groq(self, file_path: str, filename: str, mime_type: str):
+        try:
+            with open(file_path, 'rb') as f:
                 response = await client.audio.transcriptions.create(
                     model='whisper-large-v3-turbo',
-                    file=('audio.wav', audio_file, 'audio/wav'),
+                    file=(filename, f, mime_type),
                     response_format='json',
                     language='en'
                 )
 
             transcript = response.text.strip()
 
-            noise = [
-                'you', 'thank you', 'thank you.', 'thanks for watching',
-                'bye', '.', 'the', '', ' ', 'Thanks for watching!'
-            ]
-
-            if transcript and transcript.lower() not in [n.lower() for n in noise]:
+            if transcript and transcript.lower() not in NOISE and len(transcript) > 2:
                 await self.send(json.dumps({
                     'type': 'transcript',
                     'text': transcript,
@@ -129,51 +132,9 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
 
         except Exception as e:
             error_msg = str(e)
+            # Silently ignore format errors — they happen on silence chunks
             if 'could not process' not in error_msg.lower():
                 await self.send(json.dumps({
                     'type': 'error',
-                    'message': error_msg[:120]
+                    'message': error_msg[:100]
                 }))
-        finally:
-            for path in [tmp_input, tmp_wav]:
-                if path and os.path.exists(path):
-                    try:
-                        os.unlink(path)
-                    except Exception:
-                        pass
-
-    async def try_raw_fallback(self, audio_bytes: bytes):
-        """Last resort — send raw bytes as mp4"""
-        tmp_path = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                suffix='.mp4',
-                delete=False,
-                mode='wb'
-            ) as f:
-                f.write(audio_bytes)
-                tmp_path = f.name
-
-            with open(tmp_path, 'rb') as audio_file:
-                response = await client.audio.transcriptions.create(
-                    model='whisper-large-v3-turbo',
-                    file=('audio.mp4', audio_file, 'audio/mp4'),
-                    response_format='json',
-                    language='en'
-                )
-
-            transcript = response.text.strip()
-            if transcript:
-                await self.send(json.dumps({
-                    'type': 'transcript',
-                    'text': transcript,
-                    'sign_language': self.current_language
-                }))
-        except Exception:
-            pass
-        finally:
-            if tmp_path and os.path.exists(tmp_path):
-                try:
-                    os.unlink(tmp_path)
-                except Exception:
-                    pass

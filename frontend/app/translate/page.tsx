@@ -163,7 +163,12 @@ export default function ZySignAI() {
           }
           if (data.type === 'pong') {} // keepalive confirmed
           if (data.type === 'status') setStatus(data.message ?? '')
-          if (data.type === 'error') setStatus('⚠️ ' + data.message)
+          //if (data.type === 'error') setStatus('⚠️ ' + data.message)
+          
+          if (data.type === 'error') {
+  // Only show non-format errors to user
+          if (!data.message?.includes('could not process')) {setStatus('⚠️ ' + data.message)}
+} 
         } catch {}
       }
 
