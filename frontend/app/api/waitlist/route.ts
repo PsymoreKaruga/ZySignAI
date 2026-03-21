@@ -8,6 +8,28 @@ const redis = new Redis({
   token: process.env.KV_REST_API_TOKEN!,
 })
 
+function getFlag(countryCode: string): string {
+  if (!countryCode || countryCode.length !== 2) return '🌍'
+  try {
+    return String.fromCodePoint(
+      ...[...countryCode.toUpperCase()].map(
+        c => 0x1F1E0 + c.charCodeAt(0) - 65
+      )
+    )
+  } catch {
+    return '🌍'
+  }
+}
+
+function getCountryName(countryCode: string): string {
+  if (!countryCode) return 'Unknown'
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' }).of(countryCode) || 'Unknown'
+  } catch {
+    return 'Unknown'
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { email, name, type } = await req.json()
@@ -29,34 +51,17 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Detect country from IP
-    const forwarded = req.headers.get('x-forwarded-for')
-    const ip = forwarded ? forwarded.split(',')[0].trim() : '0.0.0.0'
-
-    let country = 'Unknown'
-    let flag = '🌍'
-
-    try {
-      const geoRes = await fetch(`https://ipapi.co/${ip}/json/`)
-      const geo = await geoRes.json()
-      country = geo.country_name || 'Unknown'
-      flag = geo.country_code
-        ? String.fromCodePoint(
-            ...[...geo.country_code.toUpperCase()].map(
-              c => 0x1F1E0 + c.charCodeAt(0) - 65
-            )
-          )
-        : '🌍'
-    } catch {
-      flag = '🌍'
-    }
+    // Detect country using Vercel built-in headers — works perfectly on Vercel
+    const countryCode = req.headers.get('x-vercel-ip-country') || ''
+    const countryName = getCountryName(countryCode) 
+    const flag = getFlag(countryCode)
 
     // Add to waitlist
     await redis.rpush('waitlist', JSON.stringify({
       email,
       name: name || 'Anonymous',
-      type: type || 'General',
-      country,
+      type: type || 'general',
+      country: countryName,
       flag,
       date: new Date().toISOString()
     }))
@@ -68,7 +73,7 @@ export async function POST(req: NextRequest) {
     await resend.emails.send({
       from: 'ZySignAI <onboarding@resend.dev>',
       to: 'simonkaruga945@gmail.com',
-      subject: `New waitlist signup #${position} — ${name || email} from ${country}`,
+      subject: `New waitlist signup #${position} — ${name || email} from ${flag} ${countryName}`,
       html: `
         <div style="font-family: sans-serif; padding: 20px;">
           <h2 style="color: #10b981;">
@@ -77,7 +82,7 @@ export async function POST(req: NextRequest) {
           <p><strong>Name:</strong> ${name || 'Not provided'}</p>
           <p><strong>Email:</strong> ${email}</p>
           <p><strong>Type:</strong> ${type || 'General'}</p>
-          <p><strong>Country:</strong> ${flag} ${country}</p>
+          <p><strong>Country:</strong> ${flag} ${countryName}</p>
           <p><strong>Total on waitlist:</strong> ${position}</p>
           <hr/>
           <p style="color: #6b7280; font-size: 12px;">
@@ -108,8 +113,11 @@ export async function GET() {
     const count = await redis.llen('waitlist')
     const entries = await redis.lrange('waitlist', 0, 7) as string[]
     const flags = entries
-      .map(e => {
-        try { return JSON.parse(e).flag } catch { return '🌍' }
+      .map((e: any) => {
+        try {
+          const parsed = typeof e === 'string' ? JSON.parse(e) : e
+          return parsed.flag || '🌍'
+        } catch { return '🌍' }
       })
       .filter(Boolean)
     return NextResponse.json({ count, flags })
