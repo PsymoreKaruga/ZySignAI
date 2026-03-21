@@ -16,8 +16,20 @@ export default function ZySignAI() {
   const ws       = useRef<WebSocket | null>(null)
   const recorder = useRef<MediaRecorder | null>(null)
   const stream   = useRef<MediaStream | null>(null)
+  const listeningRef = useRef(false)
 
   useEffect(() => () => stop(), [])
+
+  // Send language change to backend instantly
+  useEffect(() => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({
+        type: 'language_change',
+        language: language
+      }))
+      setStatus('Switching to ' + language)
+    }
+  }, [language])
 
   const wakeBackend = async () => {
     try {
@@ -29,6 +41,7 @@ export default function ZySignAI() {
     try {
       await wakeBackend()
       setStatus('Connecting...')
+      listeningRef.current = true
 
       const wsUrl = process.env.NEXT_PUBLIC_BACKEND_URL
         ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/ws/transcribe/`
@@ -40,96 +53,56 @@ export default function ZySignAI() {
       socket.onopen = async () => {
         setConnected(true)
         setStatus('Microphone starting...')
+
         const mic = await navigator.mediaDevices.getUserMedia({ audio: true })
         stream.current = mic
 
-        // Try webm first, fall back to default
         const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
           ? 'audio/webm;codecs=opus'
           : MediaRecorder.isTypeSupported('audio/webm')
           ? 'audio/webm'
           : ''
 
-        const rec = mimeType
-          ? new MediaRecorder(mic, { mimeType })
-          : new MediaRecorder(mic)
+        const createRecorder = () => {
+          const rec = mimeType
+            ? new MediaRecorder(mic, { mimeType })
+            : new MediaRecorder(mic)
 
-        recorder.current = rec
-
-        rec.ondataavailable = (e) => {
-          if (e.data.size > 0 && socket.readyState === WebSocket.OPEN) {
-            e.data.arrayBuffer().then(buf => socket.send(buf))
+          rec.ondataavailable = (e) => {
+            if (e.data.size > 0 && socket.readyState === WebSocket.OPEN) {
+              e.data.arrayBuffer().then(buf => socket.send(buf))
+            }
           }
+
+          rec.onstop = () => {
+            if (listeningRef.current && stream.current) {
+              try {
+                const newRec = createRecorder()
+                recorder.current = newRec
+                newRec.start(3000)
+              } catch {}
+            }
+          }
+
+          rec.onerror = () => {
+            if (listeningRef.current && stream.current) {
+              try {
+                const newRec = createRecorder()
+                recorder.current = newRec
+                newRec.start(3000)
+              } catch {}
+            }
+          }
+
+          return rec
         }
-        
 
-
-
-
-
-
-
+        const rec = createRecorder()
+        recorder.current = rec
         rec.start(3000)
-
-
-        const rec = mimeType
-  ? new MediaRecorder(mic, { mimeType })
-  : new MediaRecorder(mic)
-
-recorder.current = rec
-
-rec.ondataavailable = (e) => {
-  if (e.data.size > 0 && socket.readyState === WebSocket.OPEN) {
-    e.data.arrayBuffer().then(buf => socket.send(buf))
-  }
-}
-
-rec.onstop = () => {
-  // Auto restart recorder to keep it alive
-  if (listening && stream.current) {
-    try {
-      rec.start(3000)
-    } catch {}
-  }
-}
-
-rec.onerror = () => {
-  // Restart on error
-  if (listening && stream.current) {
-    try {
-      const newRec = mimeType
-        ? new MediaRecorder(mic, { mimeType })
-        : new MediaRecorder(mic)
-      recorder.current = newRec
-      newRec.ondataavailable = rec.ondataavailable
-      newRec.start(3000)
-    } catch {}
-  }
-}
-
-rec.start(3000)
-
-
-
         setListening(true)
         setStatus('Listening — speak now')
       }
-
-
-
-      // Send language change to backend instantly
-useEffect(() => {
-  if (ws.current && ws.current.readyState === WebSocket.OPEN) {
-    ws.current.send(JSON.stringify({
-      type: 'language_change',
-      language: language
-    }))
-    setStatus('Switching to ' + language)
-  }
-}, [language])
-
-
-
 
       socket.onmessage = (e) => {
         const data: Msg = JSON.parse(e.data)
@@ -141,19 +114,17 @@ useEffect(() => {
         if (data.type === 'error')  setStatus('Error: ' + data.message)
       }
 
-      socket.onclose = () => { setConnected(false); setStatus('Disconnected') 
-        socket.onclose = () => {
-  setConnected(false)
-  setStatus('Reconnecting...')
-  // Auto reconnect after 2 seconds if user is still listening
-  setTimeout(() => {
-    if (listening) {
-      start()
-    }
-  }, 2000)
-}
+      socket.onclose = () => {
+        setConnected(false)
+        setStatus('Reconnecting...')
+        setTimeout(() => {
+          if (listeningRef.current) start()
+        }, 2000)
       }
-      socket.onerror = () => setStatus('Cannot connect — make sure Django is running')
+
+      socket.onerror = () => {
+        setStatus('Cannot connect — make sure Django is running')
+      }
 
     } catch {
       setStatus('Microphone access denied — allow mic in browser')
@@ -161,6 +132,7 @@ useEffect(() => {
   }
 
   const stop = () => {
+    listeningRef.current = false
     recorder.current?.stop()
     stream.current?.getTracks().forEach(t => t.stop())
     ws.current?.close()
@@ -172,7 +144,6 @@ useEffect(() => {
   return (
     <main className="min-h-screen bg-gray-950 text-white flex flex-col items-center p-8">
 
-      {/* Brand */}
       <div className="mt-6 mb-8 text-center">
         <h1 className="text-5xl font-bold tracking-tight">
           ZySign<span className="text-emerald-400">AI</span>
@@ -182,7 +153,6 @@ useEffect(() => {
         </p>
       </div>
 
-      {/* Language selector */}
       <div className="flex gap-2 mb-8 flex-wrap justify-center">
         {LANGUAGES.map(lang => (
           <button
@@ -199,9 +169,7 @@ useEffect(() => {
         ))}
       </div>
 
-      {/* Avatar box */}
       <div className="w-72 h-72 rounded-3xl bg-gray-900 border border-gray-800 flex flex-col items-center justify-center mb-8 relative overflow-hidden">
-
         <div className="absolute top-3 right-3 text-xs bg-gray-800 border border-gray-700 px-2 py-0.5 rounded-full font-medium text-emerald-400">
           {language}
         </div>
@@ -226,7 +194,6 @@ useEffect(() => {
         </div>
       </div>
 
-      {/* Button */}
       <button
         onClick={listening ? stop : start}
         className={`px-10 py-3.5 rounded-full font-semibold text-sm transition-all shadow-lg mb-4 ${
@@ -240,7 +207,6 @@ useEffect(() => {
 
       <p className="text-gray-600 text-xs mb-8 h-4">{status}</p>
 
-      {/* Transcript */}
       <div className="w-full max-w-lg bg-gray-900 rounded-2xl border border-gray-800 p-5">
         <div className="flex justify-between items-center mb-3">
           <p className="text-gray-600 text-xs uppercase tracking-widest">Live transcript</p>
