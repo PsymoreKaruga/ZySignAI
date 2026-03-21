@@ -12,11 +12,20 @@ export default function ZySignAI() {
   const [status, setStatus]         = useState('Ready')
   const [language, setLanguage]     = useState('ASL')
   const [connected, setConnected]   = useState(false)
+  const [buffered, setBuffered]     = useState(0)
 
-  const ws       = useRef<WebSocket | null>(null)
-  const recorder = useRef<MediaRecorder | null>(null)
-  const stream   = useRef<MediaStream | null>(null)
-  const listeningRef = useRef(false)
+  const ws               = useRef<WebSocket | null>(null)
+  const recorder         = useRef<MediaRecorder | null>(null)
+  const stream           = useRef<MediaStream | null>(null)
+  const listeningRef     = useRef(false)
+  const languageRef      = useRef('ASL')
+  const transcriptQueue  = useRef<string[]>([])
+  const processingQueue  = useRef(false)
+
+  // Keep languageRef in sync so callbacks always have latest language
+  useEffect(() => {
+    languageRef.current = language
+  }, [language])
 
   useEffect(() => () => stop(), [])
 
@@ -31,6 +40,33 @@ export default function ZySignAI() {
     }
   }, [language])
 
+  // Process transcript queue — shows buffered transcripts in order
+  const processQueue = () => {
+    if (processingQueue.current) return
+    if (transcriptQueue.current.length === 0) return
+
+    processingQueue.current = true
+    setBuffered(transcriptQueue.current.length)
+
+    const processNext = () => {
+      if (transcriptQueue.current.length === 0) {
+        processingQueue.current = false
+        setBuffered(0)
+        return
+      }
+
+      const next = transcriptQueue.current.shift()!
+      setTranscript(p => [...p.slice(-30), next])
+      setStatus('Signing in ' + languageRef.current)
+      setBuffered(transcriptQueue.current.length)
+
+      // Small delay between items so avatar can animate each one
+      setTimeout(processNext, 150)
+    }
+
+    processNext()
+  }
+
   const wakeBackend = async () => {
     try {
       await fetch('https://zysignai-backend.onrender.com/api/health/')
@@ -42,6 +78,7 @@ export default function ZySignAI() {
       await wakeBackend()
       setStatus('Connecting...')
       listeningRef.current = true
+      transcriptQueue.current = []
 
       const wsUrl = process.env.NEXT_PUBLIC_BACKEND_URL
         ? `${process.env.NEXT_PUBLIC_BACKEND_URL}/ws/transcribe/`
@@ -106,9 +143,11 @@ export default function ZySignAI() {
 
       socket.onmessage = (e) => {
         const data: Msg = JSON.parse(e.data)
+
         if (data.type === 'transcript' && data.text) {
-          setTranscript(p => [...p.slice(-30), data.text!])
-          setStatus('Signing in ' + language)
+          // Push to queue — never lose a word even if server is slow
+          transcriptQueue.current.push(data.text)
+          processQueue()
         }
         if (data.type === 'status') setStatus(data.message ?? '')
         if (data.type === 'error')  setStatus('Error: ' + data.message)
@@ -139,6 +178,8 @@ export default function ZySignAI() {
     setListening(false)
     setConnected(false)
     setStatus('Ready')
+    transcriptQueue.current = []
+    setBuffered(0)
   }
 
   return (
@@ -170,9 +211,17 @@ export default function ZySignAI() {
       </div>
 
       <div className="w-72 h-72 rounded-3xl bg-gray-900 border border-gray-800 flex flex-col items-center justify-center mb-8 relative overflow-hidden">
+
         <div className="absolute top-3 right-3 text-xs bg-gray-800 border border-gray-700 px-2 py-0.5 rounded-full font-medium text-emerald-400">
           {language}
         </div>
+
+        {/* Buffer indicator — shows when server is catching up */}
+        {buffered > 0 && (
+          <div className="absolute top-3 left-3 text-xs bg-amber-500 bg-opacity-20 border border-amber-500 border-opacity-40 px-2 py-0.5 rounded-full text-amber-400">
+            +{buffered} queued
+          </div>
+        )}
 
         {listening ? (
           <HandAvatar
@@ -209,7 +258,9 @@ export default function ZySignAI() {
 
       <div className="w-full max-w-lg bg-gray-900 rounded-2xl border border-gray-800 p-5">
         <div className="flex justify-between items-center mb-3">
-          <p className="text-gray-600 text-xs uppercase tracking-widest">Live transcript</p>
+          <p className="text-gray-600 text-xs uppercase tracking-widest">
+            Live transcript
+          </p>
           {transcript.length > 0 && (
             <button onClick={() => setTranscript([])}
               className="text-gray-700 text-xs hover:text-gray-500">
