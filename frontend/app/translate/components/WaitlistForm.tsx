@@ -47,7 +47,7 @@ export default function WaitlistForm() {
           You are number <span className="text-white font-bold">#{result.position}</span> on the list.
         </p>
         <p className="text-gray-500 text-sm">
-          Check your email for confirmation. We will notify you at launch.
+           We will notify you at launch. Thank you for believing in ZySignAI.
         </p>
       </div>
     )

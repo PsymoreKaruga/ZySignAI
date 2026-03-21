@@ -207,7 +207,7 @@ export default function Home() {
             <div className="text-5xl mb-6">🤟</div>
             <p className="text-xl leading-relaxed italic max-w-2xl mx-auto"
               style={{ color: dark ? '#d1d5db' : '#374151' }}>
-              "I grew up watching my deaf brother sit in silence through
+              "I grew up watching my deaf relative sit in silence through
               television programmes the rest of us took for granted.
               In 2018 I decided to build the solution. In 2026 I shipped it."
             </p>
@@ -328,7 +328,7 @@ export default function Home() {
               style={{ color: dark ? '#9ca3af' : '#6b7280' }}>
               <p>
                 ZySignAI was conceived in 2018 by Simon Karuga, a developer
-                from Thika, Kenya, who watched his deaf brother excluded from
+                from Thika, Kenya, who watched his deaf relativegit excluded from
                 the media and conversations that everyone else took for granted.
               </p>
               <p>
