@@ -10,14 +10,13 @@ const USER_TYPES = [
   { value: 'general', label: '👋 General interest' },
 ]
 
-const FLAGS = ['🇰🇪', '🇺🇸', '🇬🇧', '🇨🇳', '🇫🇷', '🇦🇺', '🇮🇳', '🇧🇷']
-
 export default function WaitlistForm() {
   const [name, setName]       = useState('')
   const [email, setEmail]     = useState('')
   const [type, setType]       = useState('')
   const [loading, setLoading] = useState(false)
   const [count, setCount]     = useState<number | null>(null)
+  const [flags, setFlags]     = useState<string[]>([])
   const [result, setResult]   = useState<{
     success?: boolean
     message?: string
@@ -25,11 +24,13 @@ export default function WaitlistForm() {
     error?: string
   } | null>(null)
 
-  // Fetch current waitlist count on load
   useEffect(() => {
     fetch('/api/waitlist')
       .then(r => r.json())
-      .then(d => setCount(d.count))
+      .then(d => {
+        setCount(d.count)
+        setFlags(d.flags || [])
+      })
       .catch(() => {})
   }, [])
 
@@ -46,6 +47,9 @@ export default function WaitlistForm() {
       setResult(data)
       if (data.success) {
         setCount(data.position)
+        if (data.flag) {
+          setFlags(prev => [...prev, data.flag].slice(-8))
+        }
       }
     } catch {
       setResult({ error: 'Network error. Please try again.' })
@@ -79,22 +83,26 @@ export default function WaitlistForm() {
 
   return (
     <div>
-      {/* Live counter */}
+      {/* Live counter with real flags */}
       {count !== null && count > 0 && (
         <div className="flex items-center justify-center gap-3 mb-8">
           <div className="flex -space-x-2">
-            {FLAGS.slice(0, Math.min(count, 8)).map((flag, i) => (
-              <div
-                key={i}
-                className="w-8 h-8 rounded-full bg-gray-800 border-2 border-gray-950 flex items-center justify-center text-xs"
-              >
-                {flag}
-              </div>
-            ))}
+            {(flags.length > 0 ? flags : ['🌍'])
+              .slice(0, 8)
+              .map((flag, i) => (
+                <div
+                  key={i}
+                  className="w-8 h-8 rounded-full bg-gray-800 border-2 border-gray-950 flex items-center justify-center text-xs"
+                >
+                  {flag}
+                </div>
+              ))}
           </div>
           <p className="text-sm text-gray-400">
             <span className="text-white font-bold">{count}</span>
-            {' '}people already joined
+            {' '}people from{' '}
+            {flags.length > 1 ? 'around the world' : 'Kenya'}{' '}
+            already joined
           </p>
         </div>
       )}
@@ -133,7 +141,9 @@ export default function WaitlistForm() {
           <p className="text-red-400 text-sm text-center">{result.error}</p>
         )}
         {result?.message && !result?.success && (
-          <p className="text-emerald-400 text-sm text-center">{result.message}</p>
+          <p className="text-emerald-400 text-sm text-center">
+            {result.message}
+          </p>
         )}
 
         <button

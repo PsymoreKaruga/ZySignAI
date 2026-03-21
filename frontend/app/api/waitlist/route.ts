@@ -29,11 +29,35 @@ export async function POST(req: NextRequest) {
       })
     }
 
+    // Detect country from IP
+    const forwarded = req.headers.get('x-forwarded-for')
+    const ip = forwarded ? forwarded.split(',')[0].trim() : '0.0.0.0'
+
+    let country = 'Unknown'
+    let flag = '🌍'
+
+    try {
+      const geoRes = await fetch(`https://ipapi.co/${ip}/json/`)
+      const geo = await geoRes.json()
+      country = geo.country_name || 'Unknown'
+      flag = geo.country_code
+        ? String.fromCodePoint(
+            ...[...geo.country_code.toUpperCase()].map(
+              c => 0x1F1E0 + c.charCodeAt(0) - 65
+            )
+          )
+        : '🌍'
+    } catch {
+      flag = '🌍'
+    }
+
     // Add to waitlist
     await redis.rpush('waitlist', JSON.stringify({
       email,
       name: name || 'Anonymous',
       type: type || 'General',
+      country,
+      flag,
       date: new Date().toISOString()
     }))
     await redis.sadd('waitlist:emails', email)
@@ -43,17 +67,22 @@ export async function POST(req: NextRequest) {
     // Notify Simon
     await resend.emails.send({
       from: 'ZySignAI <onboarding@resend.dev>',
-      to: 'beatricewamucii3478@gmail.com',
-      subject: `New waitlist signup #${position} — ${name || email}`,
+      to: 'simonkaruga945@gmail.com',
+      subject: `New waitlist signup #${position} — ${name || email} from ${country}`,
       html: `
         <div style="font-family: sans-serif; padding: 20px;">
-          <h2 style="color: #10b981;">New ZySignAI Waitlist Signup #${position}</h2>
+          <h2 style="color: #10b981;">
+            New ZySignAI Waitlist Signup #${position}
+          </h2>
           <p><strong>Name:</strong> ${name || 'Not provided'}</p>
           <p><strong>Email:</strong> ${email}</p>
           <p><strong>Type:</strong> ${type || 'General'}</p>
+          <p><strong>Country:</strong> ${flag} ${country}</p>
           <p><strong>Total on waitlist:</strong> ${position}</p>
           <hr/>
-          <p style="color: #6b7280; font-size: 12px;">ZySignAI · Built in Nairobi</p>
+          <p style="color: #6b7280; font-size: 12px;">
+            ZySignAI · Built in Nairobi
+          </p>
         </div>
       `
     })
@@ -61,7 +90,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'You are on the waitlist!',
-      position
+      position,
+      flag
     })
 
   } catch (error) {
@@ -76,8 +106,14 @@ export async function POST(req: NextRequest) {
 export async function GET() {
   try {
     const count = await redis.llen('waitlist')
-    return NextResponse.json({ count })
+    const entries = await redis.lrange('waitlist', 0, 7) as string[]
+    const flags = entries
+      .map(e => {
+        try { return JSON.parse(e).flag } catch { return '🌍' }
+      })
+      .filter(Boolean)
+    return NextResponse.json({ count, flags })
   } catch {
-    return NextResponse.json({ count: 0 })
+    return NextResponse.json({ count: 0, flags: [] })
   }
 }
