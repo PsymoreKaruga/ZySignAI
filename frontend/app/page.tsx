@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
+import WaitlistForm from './translate/components/WaitlistForm'
 
 const ParticleBackground = dynamic(
   () => import('./components/ParticleBackground'),
@@ -392,7 +393,53 @@ export default function Home() {
               </Link>
             </div>
           </div>
+        </section>     
+                   
+
+
+                   {/* Waitlist */}
+        <section className="px-8 py-24 bg-gray-900/40">
+          <div className="max-w-2xl mx-auto">
+             <div className="text-center mb-10">
+                <p className="text-emerald-400 text-xs font-semibold uppercase tracking-widest mb-4">
+                   Early access
+                </p>
+                <h2 className="text-4xl font-bold mb-4">
+                Be first when we launch
+               </h2>
+                  <p className="text-gray-400 text-lg leading-relaxed">
+                    Join the waitlist and get notified the moment ZySignAI
+                   launches with full sign language avatar support.
+                   No spam — one email at launch.
+                 </p>
+            </div>
+              <WaitlistForm />
+          </div>
         </section>
+
+
+
+
+
+
+
+
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
         {/* Footer */}
         <footer

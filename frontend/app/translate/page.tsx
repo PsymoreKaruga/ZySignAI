@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
 import HandAvatar from './components/HandAvatar'
+import WaitlistForm from './components/WaitlistForm'
 
 type Msg = { type: string; text?: string; message?: string }
 
