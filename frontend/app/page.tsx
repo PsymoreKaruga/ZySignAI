@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
 import WaitlistForm from './translate/components/WaitlistForm'
@@ -9,6 +9,12 @@ const ParticleBackground = dynamic(
   { ssr: false }
 )
 
+
+
+
+
+
+
 const LANGUAGES = [
   { code: 'ASL', name: 'American', country: '🇺🇸', color: '#10b981' },
   { code: 'BSL', name: 'British', country: '🇬🇧', color: '#3b82f6' },
@@ -17,6 +23,10 @@ const LANGUAGES = [
   { code: 'LSF', name: 'French', country: '🇫🇷', color: '#8b5cf6' },
   { code: 'Auslan', name: 'Australian', country: '🇦🇺', color: '#06b6d4' },
 ]
+
+
+
+
 
 const STATS = [
   { number: '70M+', label: 'Deaf people worldwide' },
@@ -45,6 +55,13 @@ const STEPS = [
 
 export default function Home() {
   const [dark, setDark] = useState(true)
+  const [scrolled, setScrolled] = useState(false)
+
+  useEffect(() => {
+    const handleScroll = () => setScrolled(window.scrollY > 20)
+    window.addEventListener('scroll', handleScroll)
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
 
   return (
     <div
@@ -55,7 +72,7 @@ export default function Home() {
         color: dark ? 'white' : '#111827',
       }}
     >
-      <ParticleBackground />
+      <ParticleBackground dark={dark} />
 
       <div className="relative z-10">
 
@@ -64,7 +81,11 @@ export default function Home() {
           className="flex items-center justify-between px-8 py-5 border-b sticky top-0 backdrop-blur z-50"
           style={{
             borderColor: dark ? '#111827' : '#e5e7eb',
-            background: dark ? 'rgba(3,7,18,0.9)' : 'rgba(249,250,251,0.9)',
+            background: dark
+              ? scrolled ? 'rgba(3,7,18,0.95)' : 'rgba(3,7,18,0.7)'
+              : scrolled ? 'rgba(249,250,251,0.98)' : 'rgba(249,250,251,0.7)',
+            boxShadow: scrolled ? '0 1px 20px rgba(0,0,0,0.1)' : 'none',
+            transition: 'all 0.3s ease'
           }}
         >
           <div className="text-xl font-bold">
@@ -164,7 +185,7 @@ export default function Home() {
           {STATS.map((stat, i) => (
             <div
               key={i}
-              className="px-8 py-10 text-center border-r last:border-r-0"
+              className="px-8 py-10 text-center border-r last:border-r-0 card-hover"
               style={{ borderColor: dark ? '#1f2937' : '#e5e7eb' }}
             >
               <div className="text-4xl font-bold text-emerald-400 mb-2">
@@ -237,7 +258,7 @@ export default function Home() {
               {STEPS.map((step) => (
                 <div
                   key={step.step}
-                  className="border rounded-2xl p-8 transition-colors"
+                  className="border rounded-2xl p-8 transition-all card-hover"
                   style={{
                     background: dark ? '#111827' : 'white',
                     borderColor: dark ? '#1f2937' : '#e5e7eb',
@@ -283,27 +304,59 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-            {LANGUAGES.map((lang) => (
-              <div
-                key={lang.code}
-                className="border rounded-xl p-5 flex items-center gap-4 transition-colors"
-                style={{
-                  background: dark ? '#111827' : 'white',
-                  borderColor: dark ? '#1f2937' : '#e5e7eb',
-                }}
-              >
-                <span className="text-3xl">{lang.country}</span>
-                <div>
-                  <div className="font-bold text-sm" style={{ color: lang.color }}>
-                    {lang.code}
-                  </div>
-                  <div className="text-xs mt-0.5"
-                    style={{ color: dark ? '#6b7280' : '#9ca3af' }}>
-                    {lang.name} Sign Language
+
+
+           
+
+
+              {LANGUAGES.map((lang) => (
+                <div
+                  key={lang.code}
+                  className="border rounded-xl p-5 flex items-center gap-4 transition-all hover:scale-105 hover:shadow-lg cursor-pointer"
+                  style={{
+                    background: dark ? '#111827' : 'white',
+                    borderColor: dark ? '#1f2937' : '#e5e7eb',
+                    boxShadow: `0 0 0 0 ${lang.color}`,
+                  }}
+                  onMouseEnter={e => {
+                    (e.currentTarget as HTMLElement).style.borderColor = lang.color
+                    ;(e.currentTarget as HTMLElement).style.boxShadow = `0 0 20px ${lang.color}20`
+                  }}
+                  onMouseLeave={e => {
+                    ;(e.currentTarget as HTMLElement).style.borderColor = dark ? '#1f2937' : '#e5e7eb'
+                    ;(e.currentTarget as HTMLElement).style.boxShadow = 'none'
+                  }}
+                >
+                  <span className="text-3xl">{lang.country}</span>
+                  <div>
+                    <div className="font-bold text-sm" style={{ color: lang.color }}>
+                      {lang.code}
+                    </div>
+                    <div className="text-xs mt-0.5"
+                      style={{ color: dark ? '#6b7280' : '#9ca3af' }}>
+                      {lang.name} Sign Language
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
           </div>
 
           <p className="text-center text-sm" style={{ color: dark ? '#374151' : '#9ca3af' }}>
@@ -328,7 +381,7 @@ export default function Home() {
               style={{ color: dark ? '#9ca3af' : '#6b7280' }}>
               <p>
                 ZySignAI was conceived in 2018 by Simon Karuga, a developer
-                from Thika, Kenya, who watched his deaf relativegit excluded from
+                from Thika, Kenya, who watched his deaf relative excluded from
                 the media and conversations that everyone else took for granted.
               </p>
               <p>
@@ -381,7 +434,7 @@ export default function Home() {
             <div className="flex gap-4 justify-center flex-wrap">
               <Link
                 href="/translate"
-                className="bg-emerald-500 hover:bg-emerald-600 text-white px-10 py-4 rounded-full font-bold transition-all hover:scale-105 shadow-lg shadow-emerald-500/20"
+                className="bg-emerald-500 hover:bg-emerald-600 text-white px-10 py-4 rounded-full font-bold transition-all hover:scale-105 shadow-lg shadow-emerald-500/20 btn-primary"
               >
                 Try ZySignAI Free
               </Link>

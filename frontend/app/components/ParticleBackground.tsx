@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useRef } from 'react'
 
-export default function ParticleBackground() {
+export default function ParticleBackground({ dark = true }: { dark?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
@@ -95,7 +95,8 @@ export default function ParticleBackground() {
     <canvas
       ref={canvasRef}
       className="fixed inset-0 pointer-events-none z-0"
-      style={{ opacity: 0.4 }}
+      style={{ opacity: dark ? 0.4 : 0.12 }}
     />
   )
 }
+
