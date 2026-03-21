@@ -66,7 +66,7 @@ export const metadata: Metadata = {
     canonical: 'https://zy-sign-ai.vercel.app',
   },
   verification: {
-    google: 'google4e5d68f906d0b445.html',
+    google: 'peYxBSudVjLxtR5fR4oKsMwVCjKzAqJsqElPHZP2WUY',
   },
 }
 
