@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
     // Notify Simon
     await resend.emails.send({
       from: 'ZySignAI Waitlist <onboarding@resend.dev>',
-      to: 'simonkaruga945@gmail.com',
+      to: 'beatricewamucii3478@gmail.com',
       subject: `New waitlist signup — ${name || email}`,
       html: `
         <p><strong>New signup!</strong></p>

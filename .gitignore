@@ -173,3 +173,4 @@ frontend/app/Note.txt
 !backend/runtime.txt
 *.txt
 frontend/.gitignore1
+frontend/.env.local
