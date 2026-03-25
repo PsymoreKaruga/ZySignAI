@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import HandAvatar from './components/HandAvatar'
 
 type Msg = { type: string; text?: string; message?: string }
@@ -335,6 +336,29 @@ export default function ZySignAI() {
             ))}
           </div>
         )}
+       
+       {transcript.length >= 3 && (
+          <div className="w-full max-w-lg mt-4 bg-gray-900/50 border border-gray-800 rounded-2xl p-4 text-center">
+            <p className="text-gray-600 text-xs mb-2">
+             ZySignAI is built by one person. If this helped you —
+            </p>
+           <Link href="/support"
+            className="text-emerald-400 hover:text-emerald-300 text-sm font-medium transition-colors">
+         ☕ Support the mission →
+       </Link>
+  </div>
+)}
+
+
+
+
+
+
+
+
+
+
+
       </div>
 
       <p className="mt-8 text-gray-800 text-xs text-center">

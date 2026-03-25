@@ -131,6 +131,14 @@ export default function Home() {
               <span className="w-5 h-0.5 bg-current block transition-all"/>
               <span className="w-5 h-0.5 bg-current block transition-all"/>
             </button>
+            <Link href="/support"
+                  className="text-sm transition-colors hover:text-yellow-400 hidden md:block"
+                  style={{ color: muted }}>
+                  ☕ Support
+            </Link>
+
+
+
           </div>
         </nav>
 
