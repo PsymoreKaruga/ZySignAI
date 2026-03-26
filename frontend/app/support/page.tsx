@@ -263,7 +263,7 @@ export default function SupportPage() {
         <div className="border border-gray-800 rounded-2xl p-8">
           <p className="text-gray-300 text-lg leading-relaxed italic mb-6">
             "I did not build ZySignAI for money. I built it because
-            my brother deserves to watch the news. He deserves to
+            my relative deserves to watch the news. He deserves to
             understand what is being said in a meeting. He deserves
             to exist in the same world as everyone else — fully,
             not partially. If you believe that too, then we are
