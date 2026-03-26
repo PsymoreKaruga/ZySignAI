@@ -91,12 +91,19 @@ export default function Home() {
                 {['How it works', 'Languages', 'Our story'][i]}
               </a>
             ))}
-            <a href="https://github.com/PsymoreKaruga/ZySignAI"
+            <a
+              href="https://github.com/PsymoreKaruga/ZySignAI"
               target="_blank" rel="noopener noreferrer"
               className="text-sm transition-colors hover:text-emerald-400"
               style={{ color: muted }}>
               GitHub
             </a>
+            <Link
+              href="/support"
+              className="text-sm font-medium transition-colors hover:text-yellow-300"
+              style={{ color: '#facc15' }}>
+              ☕ Support
+            </Link>
             <button
               onClick={() => setDark(!dark)}
               className="w-9 h-9 rounded-full border flex items-center justify-center transition-all text-sm hover:border-emerald-500"
@@ -112,6 +119,12 @@ export default function Home() {
 
           {/* Mobile nav buttons */}
           <div className="flex md:hidden items-center gap-3">
+            <Link
+              href="/support"
+              className="text-xs font-medium"
+              style={{ color: '#facc15' }}>
+              ☕
+            </Link>
             <button
               onClick={() => setDark(!dark)}
               className="w-8 h-8 rounded-full border flex items-center justify-center text-xs"
@@ -131,14 +144,6 @@ export default function Home() {
               <span className="w-5 h-0.5 bg-current block transition-all"/>
               <span className="w-5 h-0.5 bg-current block transition-all"/>
             </button>
-            <Link href="/support"
-                  className="text-sm transition-colors hover:text-yellow-400 hidden md:block"
-                  style={{ color: muted }}>
-                  ☕ Support
-            </Link>
-
-
-
           </div>
         </nav>
 
@@ -159,12 +164,20 @@ export default function Home() {
                 {label}
               </a>
             ))}
-            <a href="https://github.com/PsymoreKaruga/ZySignAI"
+            <a
+              href="https://github.com/PsymoreKaruga/ZySignAI"
               target="_blank" rel="noopener noreferrer"
               className="text-sm py-1 transition-colors hover:text-emerald-400"
               style={{ color: muted }}>
               GitHub
             </a>
+            <Link
+              href="/support"
+              onClick={() => setMenuOpen(false)}
+              className="text-sm py-1 font-medium"
+              style={{ color: '#facc15' }}>
+              ☕ Support ZySignAI
+            </Link>
           </div>
         )}
 
@@ -195,7 +208,8 @@ export default function Home() {
               className="bg-emerald-500 hover:bg-emerald-600 text-white px-8 py-4 rounded-full font-semibold transition-all hover:scale-105 shadow-lg shadow-emerald-500/20 text-center">
               Try ZySignAI Free →
             </Link>
-            <a href="https://github.com/PsymoreKaruga/ZySignAI"
+            <a
+              href="https://github.com/PsymoreKaruga/ZySignAI"
               target="_blank" rel="noopener noreferrer"
               className="border px-8 py-4 rounded-full font-semibold text-sm transition-all text-center"
               style={{ borderColor: border, color: muted }}>
@@ -335,7 +349,8 @@ export default function Home() {
             ))}
           </div>
 
-          <p className="text-center text-xs md:text-sm" style={{ color: dark ? '#374151' : '#9ca3af' }}>
+          <p className="text-center text-xs md:text-sm"
+            style={{ color: dark ? '#374151' : '#9ca3af' }}>
             + 294 more sign languages in active development
           </p>
         </section>
@@ -372,13 +387,16 @@ export default function Home() {
               </p>
             </div>
             <div className="mt-8 md:mt-10 flex flex-col sm:flex-row gap-3 justify-center">
-              <a href="https://github.com/PsymoreKaruga/ZySignAI"
+              <a
+                href="https://github.com/PsymoreKaruga/ZySignAI"
                 target="_blank" rel="noopener noreferrer"
                 className="text-emerald-400 hover:text-emerald-300 text-sm font-medium transition-colors">
                 Read the code on GitHub →
               </a>
-              <span className="hidden sm:block" style={{ color: dark ? '#374151' : '#d1d5db' }}>·</span>
-              <a href="https://linkedin.com/in/simon-karuga-760929352"
+              <span className="hidden sm:block"
+                style={{ color: dark ? '#374151' : '#d1d5db' }}>·</span>
+              <a
+                href="https://linkedin.com/in/simon-karuga-760929352"
                 target="_blank" rel="noopener noreferrer"
                 className="text-emerald-400 hover:text-emerald-300 text-sm font-medium transition-colors">
                 Connect on LinkedIn →
@@ -404,10 +422,10 @@ export default function Home() {
                 Try ZySignAI Free
               </Link>
               <Link href="/contact"
-                className="border hover:border-emerald-500 px-8 md:px-10 py-4 rounded-full font-semibold text-sm transition-all text-center"
-                style={{ borderColor: border, color: muted }}>
-                Partner with us →
-              </Link>
+                  className="border hover:border-emerald-500 px-8 md:px-10 py-4 rounded-full font-semibold text-sm transition-all text-center md:order-0"
+                  style={{ borderColor: border, color: muted }}>
+                  Partner with us →
+                </Link>
             </div>
           </div>
         </section>
@@ -444,27 +462,29 @@ export default function Home() {
               style={{ color: dark ? '#374151' : '#9ca3af' }}>
               Universal AI Sign Language · Built by Simon Karuga · Nairobi, Kenya · 2026
             </p>
-            <div className="flex gap-5 md:gap-6">
-              {[
-                ['https://github.com/PsymoreKaruga/ZySignAI', 'GitHub', true],
-                ['/translate', 'Demo', false],
-                ['/contact', 'Contact', false],
-              ].map(([href, label, external]) => (
-                external ? (
-                  <a key={label as string} href={href as string}
-                    target="_blank" rel="noopener noreferrer"
-                    className="text-sm transition-colors hover:text-emerald-400"
-                    style={{ color: dark ? '#4b5563' : '#9ca3af' }}>
-                    {label}
-                  </a>
-                ) : (
-                  <Link key={label as string} href={href as string}
-                    className="text-sm transition-colors hover:text-emerald-400"
-                    style={{ color: dark ? '#4b5563' : '#9ca3af' }}>
-                    {label}
-                  </Link>
-                )
-              ))}
+            <div className="flex gap-5 md:gap-6 flex-wrap justify-center">
+              <a
+                href="https://github.com/PsymoreKaruga/ZySignAI"
+                target="_blank" rel="noopener noreferrer"
+                className="text-sm transition-colors hover:text-emerald-400"
+                style={{ color: dark ? '#4b5563' : '#9ca3af' }}>
+                GitHub
+              </a>
+              <Link href="/translate"
+                className="text-sm transition-colors hover:text-emerald-400"
+                style={{ color: dark ? '#4b5563' : '#9ca3af' }}>
+                Demo
+              </Link>
+              <Link href="/contact"
+                className="text-sm transition-colors hover:text-emerald-400"
+                style={{ color: dark ? '#4b5563' : '#9ca3af' }}>
+                Contact
+              </Link>
+              <Link href="/support"
+                className="text-sm transition-colors font-medium"
+                style={{ color: '#facc15' }}>
+                ☕ Support
+              </Link>
             </div>
           </div>
         </footer>
@@ -473,5 +493,3 @@ export default function Home() {
     </div>
   )
 }
-
-

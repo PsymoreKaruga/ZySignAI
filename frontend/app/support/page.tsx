@@ -50,7 +50,7 @@ export default function SupportPage() {
           ZySignAI is built by one person — Simon Karuga — a developer
           from Thika, Kenya, who has been carrying this idea since 2018.
           There is no company, no VC funding, no salary. Just a laptop,
-          a dream, and a deaf brother who deserves to hear the world.
+          a dream, and a deaf relative who deserves to hear the world.
         </p>
         <p className="text-gray-400 text-lg leading-relaxed">
           Every contribution keeps the servers running, the API calls
@@ -131,7 +131,7 @@ export default function SupportPage() {
                 )}
               </div>
               <div className="text-sm text-gray-500 mt-1">
-                Account name: Simon Macharia Karuga
+                Account name: Simon Karuga
               </div>
             </div>
             <button
