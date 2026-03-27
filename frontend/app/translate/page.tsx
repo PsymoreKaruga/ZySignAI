@@ -3,7 +3,14 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import HandAvatar from './components/HandAvatar'
 
-type Msg = { type: string; text?: string; message?: string }
+/*type Msg = { type: string; text?: string; message?: string } */
+
+type Msg = {
+  type: string
+  text?: string
+  gloss?: string
+  message?: string
+}
 
 const LANGUAGES = ['ASL', 'BSL', 'KSL', 'CSL', 'LSF', 'Auslan']
 
@@ -23,6 +30,10 @@ export default function ZySignAI() {
   const pingTimer       = useRef<NodeJS.Timeout | null>(null)
   const transcriptQueue = useRef<string[]>([])
   const processingQueue = useRef(false)
+  const [gloss, setGloss] = useState<string>('')
+
+
+
 
   useEffect(() => { languageRef.current = language }, [language])
   useEffect(() => () => stop(), [])
@@ -144,6 +155,7 @@ export default function ZySignAI() {
           if (data.type === 'transcript' && data.text) {
             transcriptQueue.current.push(data.text)
             processQueue()
+            if (data.gloss) setGloss(data.gloss)
           }
           if (data.type === 'status') setStatus(data.message ?? '')
           if (data.type === 'error') {
@@ -278,6 +290,15 @@ export default function ZySignAI() {
             </div>
           )}
 
+          {/* Gloss display inside avatar box */}
+          {listening && gloss && (
+            <div className="absolute bottom-8 left-0 right-0 px-3 text-center">
+              <p className="text-xs font-bold tracking-widest text-emerald-400 bg-gray-950/80 rounded-lg px-2 py-1">
+                {gloss}
+              </p>
+            </div>
+          )}
+
           <div className="absolute bottom-3 left-3 flex items-center gap-1.5">
             <div className={`w-2 h-2 rounded-full transition-all ${
               connected ? 'bg-emerald-400 animate-pulse' : 'bg-gray-700'
@@ -326,11 +347,16 @@ export default function ZySignAI() {
           ) : (
             <div className="space-y-2 max-h-48 overflow-y-auto">
               {transcript.map((line, i) => (
-                <p key={i} className={`text-sm leading-relaxed ${
-                  i === transcript.length - 1 ? 'text-white' : 'text-gray-600'
+                <div key={i} className={`text-sm leading-relaxed ${
+                  i === transcript.length - 1 ? 'opacity-100' : 'opacity-40'
                 }`}>
-                  {line}
-                </p>
+                  <p className="text-white">{line}</p>
+                  {i === transcript.length - 1 && gloss && (
+                    <p className="text-emerald-400 text-xs font-bold tracking-widest mt-1">
+                      ✋ {gloss}
+                    </p>
+                  )}
+                </div>
               ))}
             </div>
           )}

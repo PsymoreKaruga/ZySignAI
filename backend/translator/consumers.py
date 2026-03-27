@@ -1,6 +1,4 @@
 import json
-import tempfile
-import os
 import io
 from channels.generic.websocket import AsyncWebsocketConsumer
 from groq import AsyncGroq
@@ -11,21 +9,47 @@ client = AsyncGroq(api_key=settings.GROQ_API_KEY)
 NOISE = {
     'you', 'thank you', 'thank you.', 'thanks for watching',
     'bye', '.', 'the', '', ' ', 'thanks for watching!',
-    'thank you so much', 'please', 'subscribe', '...'
+    'thank you so much', 'please', 'subscribe', '...',
+    'you.', 'the.', 'bye.', 'hi.', 'hey.', 'hi', 'hey',
 }
+
+GLOSS_SYSTEM_PROMPT = """You are an expert sign language translator.
+Convert English text into Sign Language Gloss notation.
+
+Rules:
+- Use ALL CAPS
+- Remove articles: a, an, the
+- Remove helper verbs: am, is, are, was, were
+- Use present tense only
+- Keep nouns, verbs, adjectives, and question words
+- For questions use WHAT, WHERE, WHO, WHEN, WHY at the END
+- Output ONLY the glossed text — no explanation, no punctuation
+
+Examples:
+"What is your name?" -> YOUR NAME WHAT
+"I am going to the store" -> STORE I GO
+"She is very happy today" -> TODAY SHE VERY HAPPY
+"Can you help me please" -> YOU HELP ME
+"I love you" -> I LOVE YOU
+"Where do you live" -> YOU LIVE WHERE"""
+
 
 class TranscribeConsumer(AsyncWebsocketConsumer):
 
     async def connect(self):
         await self.accept()
         self.current_language = 'ASL'
+        self.audio_chunks = []
+        self.total_bytes = 0
+        self.SEND_THRESHOLD = 25000
         await self.send(json.dumps({
             'type': 'status',
-            'message': 'ZySignAI engine connected'
+            'message': 'ZySignAI connected'
         }))
 
     async def disconnect(self, code):
-        pass
+        self.audio_chunks = []
+        self.total_bytes = 0
 
     async def receive(self, text_data=None, bytes_data=None):
         if bytes_data:
@@ -33,107 +57,125 @@ class TranscribeConsumer(AsyncWebsocketConsumer):
         elif text_data:
             try:
                 data = json.loads(text_data)
-                msg_type = data.get('type')
-                if msg_type == 'ping':
+                t = data.get('type')
+                if t == 'ping':
                     await self.send(json.dumps({'type': 'pong'}))
-                elif msg_type == 'language_change':
+                elif t == 'language_change':
                     self.current_language = data.get('language', 'ASL')
-                    await self.send(json.dumps({
-                        'type': 'status',
-                        'message': f'Switching to {self.current_language}'
-                    }))
+                elif t == 'flush':
+                    if self.audio_chunks:
+                        await self.process()
             except Exception:
                 pass
 
     async def handle_audio(self, chunk: bytes):
-        if len(chunk) < 1000:
+        if len(chunk) < 500:
             return
-        await self.transcribe_chunk(chunk)
+        self.audio_chunks.append(chunk)
+        self.total_bytes += len(chunk)
+        if self.total_bytes >= self.SEND_THRESHOLD:
+            await self.process()
 
-    async def transcribe_chunk(self, audio_bytes: bytes):
-        tmp_input = None
-        tmp_wav = None
+    async def process(self):
+        if not self.audio_chunks:
+            return
+        data = b''.join(self.audio_chunks)
+        self.audio_chunks = []
+        self.total_bytes = 0
+        if len(data) < 3000:
+            return
+        await self.transcribe(data)
+
+    async def transcribe(self, audio: bytes):
+        # Try in-memory WAV conversion first
         try:
-            # Write webm to temp file
-            with tempfile.NamedTemporaryFile(
-                suffix='.webm', delete=False, mode='wb'
-            ) as f:
-                f.write(audio_bytes)
-                tmp_input = f.name
+            from pydub import AudioSegment
+            audio_io = io.BytesIO(audio)
+            segment = AudioSegment.from_file(audio_io, format='webm')
+            wav_io = io.BytesIO()
+            segment.set_frame_rate(16000).set_channels(1).export(
+                wav_io, format='wav'
+            )
+            wav_io.seek(0)
+            await self.send_to_groq(wav_io, 'audio.wav', 'audio/wav')
+            return
+        except Exception:
+            pass
 
-            tmp_wav = tmp_input.replace('.webm', '.wav')
-            converted = False
+        # Fallback — raw formats
+        for filename, mime in [
+            ('audio.webm', 'audio/webm'),
+            ('audio.ogg', 'audio/ogg'),
+            ('audio.mp4', 'audio/mp4'),
+        ]:
+            success = await self.send_to_groq(
+                io.BytesIO(audio), filename, mime
+            )
+            if success:
+                return
 
-            # Try av (PyAV) conversion first — pure Python, no system ffmpeg needed
-            try:
-                import av
-                with av.open(tmp_input) as in_container:
-                    with av.open(tmp_wav, 'w', format='wav') as out_container:
-                        out_stream = out_container.add_stream('pcm_s16le', rate=16000)
-                        out_stream.layout = 'mono'
-                        for frame in in_container.decode(audio=0):
-                            frame.pts = None
-                            for packet in out_stream.encode(frame):
-                                out_container.mux(packet)
-                        for packet in out_stream.encode(None):
-                            out_container.mux(packet)
-                converted = os.path.exists(tmp_wav) and os.path.getsize(tmp_wav) > 1000
-            except Exception:
-                converted = False
+    async def send_to_groq(
+        self,
+        stream: io.BytesIO,
+        filename: str,
+        mime: str
+    ) -> bool:
+        try:
+            # Step 1 — Speech to Text
+            response = await client.audio.transcriptions.create(
+                model='whisper-large-v3-turbo',
+                file=(filename, stream, mime),
+                response_format='json',
+                language='en'
+            )
 
-            # If av failed try pydub
-            if not converted:
-                try:
-                    from pydub import AudioSegment
-                    audio = AudioSegment.from_file(tmp_input)
-                    audio = audio.set_frame_rate(16000).set_channels(1)
-                    audio.export(tmp_wav, format='wav')
-                    converted = os.path.exists(tmp_wav) and os.path.getsize(tmp_wav) > 1000
-                except Exception:
-                    converted = False
+            english = response.text.strip()
 
-            # Send to Groq — WAV if converted, otherwise raw webm
-            if converted:
-                await self.send_to_groq(tmp_wav, 'audio.wav', 'audio/wav')
-            else:
-                await self.send_to_groq(tmp_input, 'audio.webm', 'audio/webm')
+            if not english or english.lower() in NOISE or len(english) < 3:
+                return True
+
+            # Step 2 — English to Sign Language Gloss
+            gloss = await self.to_gloss(english)
+
+            # Step 3 — Send both to frontend
+            await self.send(json.dumps({
+                'type': 'transcript',
+                'text': english,
+                'gloss': gloss,
+                'sign_language': self.current_language
+            }))
+
+            return True
 
         except Exception as e:
+            msg = str(e).lower()
+            if 'could not process' in msg or '400' in msg:
+                return False
             await self.send(json.dumps({
                 'type': 'error',
                 'message': str(e)[:100]
             }))
-        finally:
-            for path in [tmp_input, tmp_wav]:
-                if path and os.path.exists(path):
-                    try:
-                        os.unlink(path)
-                    except Exception:
-                        pass
+            return False
 
-    async def send_to_groq(self, file_path: str, filename: str, mime_type: str):
+    async def to_gloss(self, english: str) -> str:
+        """Convert English to Sign Language Gloss using Llama 3"""
         try:
-            with open(file_path, 'rb') as f:
-                response = await client.audio.transcriptions.create(
-                    model='whisper-large-v3-turbo',
-                    file=(filename, f, mime_type),
-                    response_format='json',
-                    language='en'
-                )
-
-            transcript = response.text.strip()
-
-            if transcript and transcript.lower() not in NOISE and len(transcript) > 2:
-                await self.send(json.dumps({
-                    'type': 'transcript',
-                    'text': transcript,
-                    'sign_language': self.current_language
-                }))
-
-        except Exception as e:
-            error_msg = str(e)
-            if 'could not process' not in error_msg.lower():
-                await self.send(json.dumps({
-                    'type': 'error',
-                    'message': error_msg[:100]
-                }))
+            completion = await client.chat.completions.create(
+                messages=[
+                    {
+                        'role': 'system',
+                        'content': GLOSS_SYSTEM_PROMPT
+                    },
+                    {
+                        'role': 'user',
+                        'content': f'Translate to {self.current_language} Gloss: {english}'
+                    }
+                ],
+                model='llama-3.3-70b-versatile',
+                max_tokens=60,
+                temperature=0.0,
+            )
+            return completion.choices[0].message.content.strip()
+        except Exception:
+            # Fallback — return uppercase English if gloss fails
+            return english.upper()
