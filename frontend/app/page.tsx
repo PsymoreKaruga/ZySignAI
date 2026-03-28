@@ -164,6 +164,12 @@ export default function Home() {
                 {label}
               </a>
             ))}
+            <Link href="/broadcast"
+              onClick={() => setMenuOpen(false)}
+              className="text-sm py-1 transition-colors hover:text-emerald-400"
+              style={{ color: muted }}>
+              Broadcasters
+            </Link>
             <a
               href="https://github.com/PsymoreKaruga/ZySignAI"
               target="_blank" rel="noopener noreferrer"
