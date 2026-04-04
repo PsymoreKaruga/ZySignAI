@@ -98,6 +98,11 @@ export default function Home() {
               style={{ color: muted }}>
               GitHub
             </a>
+            <Link href="/api-docs"
+              className="text-sm transition-colors hover:text-emerald-400"
+              style={{ color: muted }}>
+              API
+            </Link>
             <Link
               href="/support"
               className="text-sm font-medium transition-colors hover:text-yellow-300"
@@ -177,6 +182,12 @@ export default function Home() {
               style={{ color: muted }}>
               GitHub
             </a>
+            <Link href="/api-docs"
+              onClick={() => setMenuOpen(false)}
+              className="text-sm py-1 transition-colors hover:text-emerald-400"
+              style={{ color: muted }}>
+              API Docs
+            </Link>
             <Link
               href="/support"
               onClick={() => setMenuOpen(false)}
