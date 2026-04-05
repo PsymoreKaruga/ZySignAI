@@ -18,9 +18,6 @@ def health(request):
 @csrf_exempt
 @require_http_methods(['POST'])
 def youtube_captions(request):
-    """
-    Fetch YouTube captions and convert to sign language gloss
-    """
     try:
         body = json.loads(request.body)
         video_id = body.get('video_id', '').strip()
@@ -31,24 +28,49 @@ def youtube_captions(request):
 
         try:
             from youtube_transcript_api import YouTubeTranscriptApi
-            try:
-                # Try to fetch manual captions first
-                transcript = YouTubeTranscriptApi.get_transcript(
-                    video_id,
-                    languages=['en', 'en-US', 'en-GB', 'en-CA', 'en-IN']
-                )
-            except Exception:
-                # Try auto-generated captions as fallback
-                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-                transcript = transcript_list.find_generated_transcript(
-                    ['en', 'en-US']
-                ).fetch()
+            from youtube_transcript_api.formatters import JSONFormatter
+
+            # Use proxies to avoid rate limiting
+            transcript = None
+            errors = []
+
+            # Try manual language codes
+            lang_codes = ['en', 'en-US', 'en-GB', 'en-CA', 'en-IN', 'en-AU']
+
+            for lang in lang_codes:
+                try:
+                    transcript = YouTubeTranscriptApi.get_transcript(
+                        video_id,
+                        languages=[lang]
+                    )
+                    if transcript:
+                        break
+                except Exception as e:
+                    errors.append(str(e))
+                    continue
+
+            # Try auto-generated if manual fails
+            if not transcript:
+                try:
+                    transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                    for t in transcript_list:
+                        if t.language_code.startswith('en'):
+                            transcript = t.fetch()
+                            break
+                except Exception as e:
+                    errors.append(str(e))
+
+            if not transcript:
+                return JsonResponse({
+                    'error': f'No captions found. YouTube may be rate limiting. Try again in 1 minute. Details: {errors[0][:80] if errors else "unknown"}'
+                }, status=404)
+
         except Exception as e:
             return JsonResponse({
-                'error': f'No captions found. Error: {str(e)[:100]}'
-            }, status=404)
+                'error': f'Caption fetch failed: {str(e)[:100]}'
+            }, status=500)
 
-        # Batch into groups of 3 segments
+        # Batch into groups of 3
         glossed = []
         batch_size = 3
         for i in range(0, len(transcript), batch_size):
