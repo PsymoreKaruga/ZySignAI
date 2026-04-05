@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 280px;
+      background: #030712;
+      color: white;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 16px;
+    }
+    .brand {
+      font-size: 18px;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+    .brand span { color: #10b981; }
+    .tagline {
+      font-size: 10px;
+      color: #6b7280;
+      margin-bottom: 16px;
+      line-height: 1.4;
+    }
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(16,185,129,0.1);
+      border: 1px solid rgba(16,185,129,0.2);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 14px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+      animation: pulse 2s infinite;
+      flex-shrink: 0;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    .status-text {
+      font-size: 11px;
+      color: #10b981;
+      font-weight: 600;
+    }
+    .instruction {
+      font-size: 10px;
+      color: #6b7280;
+      line-height: 1.6;
+      margin-bottom: 14px;
+    }
+    .instruction strong {
+      color: #9ca3af;
+    }
+    .footer {
+      font-size: 9px;
+      color: #374151;
+      text-align: center;
+      border-top: 1px solid #1f2937;
+      padding-top: 10px;
+    }
+    .langs {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+    .lang {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 20px;
+      background: #1f2937;
+      color: #9ca3af;
+    }
+  </style>
+</head>
+<body>
+  <div class="brand">ZySign<span>AI</span></div>
+  <div class="tagline">Real-time AI sign language for YouTube</div>
+
+  <div class="status">
+    <div class="dot"></div>
+    <div class="status-text">Extension active</div>
+  </div>
+
+  <div class="instruction">
+    <strong>How to use:</strong><br>
+    1. Open any YouTube video<br>
+    2. The signing avatar appears automatically<br>
+    3. Change language using the dropdown on the avatar<br>
+    4. Drag the avatar to reposition it
+  </div>
+
+  <div class="langs">
+    <div class="lang" style="color:#f59e0b">KSL</div>
+    <div class="lang" style="color:#10b981">ASL</div>
+    <div class="lang" style="color:#3b82f6">BSL</div>
+    <div class="lang" style="color:#ef4444">CSL</div>
+    <div class="lang" style="color:#8b5cf6">LSF</div>
+    <div class="lang" style="color:#06b6d4">Auslan</div>
+  </div>
+
+  <div class="footer">
+    Built by Simon Karuga · Nairobi, Kenya · 2026<br>
+    Breaking barriers for 70 million deaf people
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
+
