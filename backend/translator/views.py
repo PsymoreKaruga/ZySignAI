@@ -29,23 +29,51 @@ def youtube_captions(request):
         if not video_id:
             return JsonResponse({'error': 'No video ID provided'}, status=400)
 
-        # Try to fetch captions using yt-dlp
-        captions = fetch_captions(video_id)
+        try:
+            from youtube_transcript_api import YouTubeTranscriptApi
+            try:
+                # Try to fetch manual captions first
+                transcript = YouTubeTranscriptApi.get_transcript(
+                    video_id,
+                    languages=['en', 'en-US', 'en-GB', 'en-CA', 'en-IN']
+                )
+            except Exception:
+                # Try auto-generated captions as fallback
+                transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+                transcript = transcript_list.find_generated_transcript(
+                    ['en', 'en-US']
+                ).fetch()
+        except Exception as e:
+            return JsonResponse({
+                'error': f'No captions found. Error: {str(e)[:100]}'
+            }, status=404)
 
-        if not captions:
-            return JsonResponse(
-                {'error': 'No captions found for this video. Try a video with English captions enabled.'},
-                status=404
-            )
+        # Batch into groups of 3 segments
+        glossed = []
+        batch_size = 3
+        for i in range(0, len(transcript), batch_size):
+            batch = transcript[i:i + batch_size]
+            combined = ' '.join([
+                s['text'].replace('\n', ' ') for s in batch
+            ])
+            try:
+                gloss = get_gloss(combined, language)
+            except Exception:
+                gloss = combined.upper()
 
-        # Convert captions to gloss
-        glossed = gloss_captions(captions, language)
+            for j, seg in enumerate(batch):
+                glossed.append({
+                    'start': seg['start'],
+                    'duration': seg['duration'],
+                    'text': seg['text'].replace('\n', ' '),
+                    'gloss': gloss if j == 0 else '',
+                })
 
         return JsonResponse({
             'success': True,
             'captions': glossed,
             'language': language,
-            'video_id': video_id,
+            'total': len(glossed),
         })
 
     except Exception as e:
@@ -227,3 +255,9 @@ def get_gloss(english: str, language: str) -> str:
         return completion.choices[0].message.content.strip()
     except Exception:
         return english.upper()
+    
+
+
+
+
+

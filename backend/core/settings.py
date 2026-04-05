@@ -11,10 +11,24 @@ DEBUG = True
 CORS_ALLOWED_ORIGINS = [
     'https://zy-sign-ai.vercel.app',
     'http://localhost:3000',
-    'http://192.168.137.1:3000',
+]
+
+# Allow Chrome extensions
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r'^chrome-extension://.*$',
 ]
 
 CORS_ALLOW_ALL_ORIGINS = False
+
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'origin',
+    'user-agent',
+    'x-requested-with',
+]
 
 ALLOWED_HOSTS = [
     'zysignai-backend.onrender.com',
