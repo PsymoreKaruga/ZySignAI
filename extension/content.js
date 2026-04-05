@@ -81,15 +81,19 @@
     document.getElementById('zysignai-minimize').textContent = isMinimized ? '□' : '─'
   }
 
-  document.getElementById('zysignai-lang-select').onchange = e => {
-    currentLang = e.target.value
-    const color = LANG_COLORS[currentLang]
-    overlay.style.borderColor = color + '60'
-    document.getElementById('zysignai-gloss-text').style.color = color
-    document.getElementById('zysignai-loading-text').textContent = 'Reloading for ' + currentLang + '…'
-    showLoading()
-    loadCaptions()
-  }
+  setTimeout(() => {
+    const sel = document.getElementById('zysignai-lang-select')
+    if (!sel) return
+    sel.onchange = e => {
+      currentLang = e.target.value
+      const color = LANG_COLORS[currentLang]
+      overlay.style.borderColor = color + '60'
+      const glossText = document.getElementById('zysignai-gloss-text')
+      if (glossText) glossText.style.color = color
+      showLoading()
+      loadCaptions()
+    }
+  }, 100)
 
   // ── Get YouTube video ID ────────────────────────────────────────────
   function getVideoId () {

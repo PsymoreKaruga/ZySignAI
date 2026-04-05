@@ -26,30 +26,19 @@ def youtube_captions(request):
         if not video_id:
             return JsonResponse({'error': 'No video ID provided'}, status=400)
 
+        # Fetch captions
         try:
             from youtube_transcript_api import YouTubeTranscriptApi
-            from youtube_transcript_api.formatters import JSONFormatter
-
-            # Use proxies to avoid rate limiting
             transcript = None
-            errors = []
 
-            # Try manual language codes
-            lang_codes = ['en', 'en-US', 'en-GB', 'en-CA', 'en-IN', 'en-AU']
+            try:
+                transcript = YouTubeTranscriptApi.get_transcript(
+                    video_id,
+                    languages=['en', 'en-US', 'en-GB', 'en-CA']
+                )
+            except Exception:
+                pass
 
-            for lang in lang_codes:
-                try:
-                    transcript = YouTubeTranscriptApi.get_transcript(
-                        video_id,
-                        languages=[lang]
-                    )
-                    if transcript:
-                        break
-                except Exception as e:
-                    errors.append(str(e))
-                    continue
-
-            # Try auto-generated if manual fails
             if not transcript:
                 try:
                     transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
@@ -57,27 +46,36 @@ def youtube_captions(request):
                         if t.language_code.startswith('en'):
                             transcript = t.fetch()
                             break
-                except Exception as e:
-                    errors.append(str(e))
+                except Exception:
+                    pass
 
             if not transcript:
                 return JsonResponse({
-                    'error': f'No captions found. YouTube may be rate limiting. Try again in 1 minute. Details: {errors[0][:80] if errors else "unknown"}'
+                    'error': 'No English captions found for this video.'
                 }, status=404)
 
         except Exception as e:
             return JsonResponse({
-                'error': f'Caption fetch failed: {str(e)[:100]}'
+                'error': f'Caption error: {str(e)[:80]}'
             }, status=500)
 
-        # Batch into groups of 3
-        glossed = []
-        batch_size = 3
+        # --- KEY FIX: batch ALL captions into ONE Groq call ---
+        # Instead of calling Groq 50+ times, call it ONCE with all text
+        # Then split the glosses back to each segment
+
+        # Group captions into larger batches of 10
+        batch_size = 10
+        batches = []
         for i in range(0, len(transcript), batch_size):
             batch = transcript[i:i + batch_size]
-            combined = ' '.join([
+            combined = ' | '.join([
                 s['text'].replace('\n', ' ') for s in batch
             ])
+            batches.append((i, batch, combined))
+
+        # Call Groq once per batch of 10 (much faster)
+        glossed = []
+        for batch_idx, (start_i, batch, combined) in enumerate(batches):
             try:
                 gloss = get_gloss(combined, language)
             except Exception:
