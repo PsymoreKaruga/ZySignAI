@@ -98,46 +98,107 @@
   // ── FETCH CAPTIONS FROM BROWSER (not server) ──────────────────────
   async function fetchCaptionsFromBrowser(videoId) {
     try {
-      // Step 1: Get the video page to find caption track URL
-      const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-        credentials: 'include'
-      })
+      const pageRes = await fetch(
+        `https://www.youtube.com/watch?v=${videoId}&hl=en`,
+        { credentials: 'include' }
+      )
       const html = await pageRes.text()
 
-      // Extract caption tracks from ytInitialPlayerResponse
-      const match = html.match(/"captionTracks":(\[.*?\])/)
-      if (!match) return null
+      // Try multiple regex patterns for different YouTube page formats
+      let captionTracks = null
 
-      const tracks = JSON.parse(match[1])
-      const enTrack = tracks.find(t =>
-        t.languageCode === 'en' ||
-        t.languageCode === 'en-US' ||
-        t.languageCode === 'en-GB' ||
-        (t.kind === 'asr' && t.languageCode.startsWith('en'))
-      )
+      const patterns = [
+        /"captionTracks":(\[.*?\])/,
+        /"captionTracks": (\[.*?\])/,
+        /captionTracks":"(.*?)"/,
+      ]
 
-      if (!enTrack) return null
+      for (const pattern of patterns) {
+        const match = html.match(pattern)
+        if (match) {
+          try {
+            captionTracks = JSON.parse(match[1])
+            break
+          } catch {
+            continue
+          }
+        }
+      }
 
-      // Step 2: Fetch the actual caption XML
-      const captionRes = await fetch(enTrack.baseUrl + '&fmt=json3')
-      const captionData = await captionRes.json()
+      if (!captionTracks || captionTracks.length === 0) {
+        console.log('ZySignAI: No caption tracks found in page')
+        return null
+      }
 
-      if (!captionData.events) return null
+      // Find English track — prefer manual over auto-generated
+      const enTrack =
+        captionTracks.find(t => t.languageCode === 'en' && !t.kind) ||
+        captionTracks.find(t => t.languageCode === 'en-US') ||
+        captionTracks.find(t => t.languageCode === 'en-GB') ||
+        captionTracks.find(t => t.languageCode?.startsWith('en'))
 
-      // Convert to our format
-      const transcript = captionData.events
-        .filter(e => e.segs && e.tStartMs !== undefined)
-        .map(e => ({
-          start: e.tStartMs / 1000,
-          duration: (e.dDurationMs || 3000) / 1000,
-          text: e.segs.map(s => s.utf8 || '').join('').replace(/\n/g, ' ').trim()
-        }))
-        .filter(e => e.text)
+      if (!enTrack || !enTrack.baseUrl) {
+        console.log('ZySignAI: No English track found. Tracks:', captionTracks.map(t => t.languageCode))
+        return null
+      }
 
-      return transcript
+      // Fetch captions — try JSON format first, fall back to XML
+      let transcript = null
+
+      try {
+        const jsonRes = await fetch(enTrack.baseUrl + '&fmt=json3')
+        const text = await jsonRes.text()
+        if (!text || text.trim() === '') throw new Error('Empty response')
+        const jsonData = JSON.parse(text)
+
+        if (jsonData.events) {
+          transcript = jsonData.events
+            .filter(e => e.segs && e.tStartMs !== undefined)
+            .map(e => ({
+              start: e.tStartMs / 1000,
+              duration: (e.dDurationMs || 3000) / 1000,
+              text: e.segs
+                .map(s => s.utf8 || '')
+                .join('')
+                .replace(/\n/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim()
+            }))
+            .filter(e => e.text && e.text.length > 1)
+        }
+      } catch (jsonErr) {
+        console.log('ZySignAI: JSON captions failed, trying XML:', jsonErr.message)
+
+        // Try XML format
+        try {
+          const xmlRes = await fetch(enTrack.baseUrl)
+          const xmlText = await xmlRes.text()
+          const parser = new DOMParser()
+          const xmlDoc = parser.parseFromString(xmlText, 'text/xml')
+          const texts = xmlDoc.querySelectorAll('text')
+
+          transcript = Array.from(texts).map(node => ({
+            start: parseFloat(node.getAttribute('start') || '0'),
+            duration: parseFloat(node.getAttribute('dur') || '3'),
+            text: node.textContent
+              .replace(/&amp;/g, '&')
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>')
+              .replace(/&#39;/g, "'")
+              .replace(/&quot;/g, '"')
+              .replace(/\n/g, ' ')
+              .trim()
+          })).filter(e => e.text)
+        } catch (xmlErr) {
+          console.log('ZySignAI: XML captions also failed:', xmlErr.message)
+          return null
+        }
+      }
+
+      return transcript && transcript.length > 0 ? transcript : null
 
     } catch (err) {
-      console.log('ZySignAI: Browser caption fetch failed:', err.message)
+      console.log('ZySignAI: Caption fetch error:', err.message)
       return null
     }
   }
