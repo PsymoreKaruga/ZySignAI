@@ -103,6 +103,11 @@ export default function Home() {
               style={{ color: muted }}>
               API
             </Link>
+            <Link href="/watch"
+              className="text-sm transition-colors hover:text-emerald-400"
+              style={{ color: muted }}>
+              Watch
+            </Link>
             <Link
               href="/support"
               className="text-sm font-medium transition-colors hover:text-yellow-300"
@@ -187,6 +192,12 @@ export default function Home() {
               className="text-sm py-1 transition-colors hover:text-emerald-400"
               style={{ color: muted }}>
               API Docs
+            </Link>
+            <Link href="/watch"
+              onClick={() => setMenuOpen(false)}
+              className="text-sm py-1 transition-colors hover:text-emerald-400"
+              style={{ color: muted }}>
+              Watch with Sign Language
             </Link>
             <Link
               href="/support"
