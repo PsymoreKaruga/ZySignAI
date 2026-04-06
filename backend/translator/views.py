@@ -10,9 +10,27 @@ from django.conf import settings
 
 groq_client = Groq(api_key=settings.GROQ_API_KEY)
 
+# Initialize Gemini if key exists
+gemini_model = None
+try:
+    import google.generativeai as genai
+    gemini_key = os.getenv('GEMINI_API_KEY')
+    if gemini_key:
+        genai.configure(api_key=gemini_key)
+        gemini_model = genai.GenerativeModel('gemini-2.0-flash')
+except Exception:
+    pass
+
 
 def health(request):
-    return JsonResponse({'status': 'ok', 'service': 'ZySignAI'})
+    return JsonResponse({
+        'status': 'ok',
+        'service': 'ZySignAI',
+        'engines': {
+            'groq': bool(settings.GROQ_API_KEY),
+            'gemini': bool(gemini_model),
+        }
+    })
 
 
 @csrf_exempt
@@ -140,26 +158,18 @@ def gloss_captions(captions: list, language: str) -> list:
 @csrf_exempt
 @require_http_methods(['POST'])
 def gloss_text(request):
-    """
-    Convert any English text to sign language gloss in real time
-    """
     try:
         body = json.loads(request.body)
         text = body.get('text', '').strip()
         language = body.get('language', 'ASL')
-
         if not text:
-            return JsonResponse({'error': 'No text provided'}, status=400)
-
+            return JsonResponse({'error': 'No text'}, status=400)
         gloss = get_gloss(text, language)
-
         return JsonResponse({
             'success': True,
-            'text': text,
             'gloss': gloss,
-            'language': language,
+            'language': language
         })
-
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -202,36 +212,52 @@ def transcribe_file(request):
             tmp_path = tmp.name
 
         try:
-            with open(tmp_path, 'rb') as f:
-                response = groq_client.audio.transcriptions.create(
-                    model='whisper-large-v3-turbo',
-                    file=(filename, f, mime),
-                    response_format='verbose_json',
-                    language='en'
-                )
+            # Try Groq first
+            transcript_text = None
+            try:
+                with open(tmp_path, 'rb') as f:
+                    response = groq_client.audio.transcriptions.create(
+                        model='whisper-large-v3-turbo',
+                        file=(filename, f, mime),
+                        response_format='verbose_json',
+                        language='en'
+                    )
+                transcript_text = response.text.strip()
+                segments = []
+                if hasattr(response, 'segments') and response.segments:
+                    for seg in response.segments:
+                        segments.append({
+                            'start': round(seg.start, 2),
+                            'end': round(seg.end, 2),
+                            'text': seg.text.strip(),
+                        })
+            except Exception as groq_err:
+                print(f'Groq transcription failed: {groq_err}')
+                segments = []
 
-            transcript = response.text.strip()
+            # Fall back to Gemini for transcription if Groq failed
+            if not transcript_text and gemini_model:
+                try:
+                    with open(tmp_path, 'rb') as f:
+                        audio_data = f.read()
+                    import base64
+                    b64 = base64.b64encode(audio_data).decode()
+                    response = gemini_model.generate_content([
+                        {'mime_type': mime, 'data': b64},
+                        'Transcribe this audio accurately. Output only the transcribed text.'
+                    ])
+                    transcript_text = response.text.strip()
+                except Exception as gemini_err:
+                    print(f'Gemini transcription failed: {gemini_err}')
 
-            if not transcript:
-                return JsonResponse(
-                    {'error': 'No speech detected in file'},
-                    status=400
-                )
+            if not transcript_text:
+                return JsonResponse({'error': 'No speech detected'}, status=400)
 
-            gloss = get_gloss(transcript, language)
-
-            segments = []
-            if hasattr(response, 'segments') and response.segments:
-                for seg in response.segments:
-                    segments.append({
-                        'start': round(seg.start, 2),
-                        'end': round(seg.end, 2),
-                        'text': seg.text.strip(),
-                    })
+            gloss = get_gloss(transcript_text, language)
 
             return JsonResponse({
                 'success': True,
-                'transcript': transcript,
+                'transcript': transcript_text,
                 'gloss': gloss,
                 'segments': segments,
                 'language': language,
@@ -250,31 +276,46 @@ def transcribe_file(request):
 
 
 def get_gloss(english: str, language: str) -> str:
+    """Try Groq first, fall back to Gemini"""
+    prompt_system = (
+        'You are an expert sign language translator. '
+        'Convert English text into Sign Language Gloss notation. '
+        'Rules: Use ALL CAPS. Remove articles (a, an, the). '
+        'Remove helper verbs (am, is, are, was, were). '
+        'Use present tense. Output ONLY the glossed text — nothing else.'
+    )
+    prompt_user = f'Translate to {language} Gloss: {english}'
+
+    # Try Groq first
     try:
         completion = groq_client.chat.completions.create(
             messages=[
-                {
-                    'role': 'system',
-                    'content': (
-                        'You are an expert sign language translator. '
-                        'Convert English text into Sign Language Gloss notation. '
-                        'Rules: Use ALL CAPS. Remove articles (a, an, the). '
-                        'Remove helper verbs (am, is, are, was, were). '
-                        'Use present tense. Output ONLY the glossed text — nothing else.'
-                    )
-                },
-                {
-                    'role': 'user',
-                    'content': f'Translate to {language} Gloss: {english}'
-                }
+                {'role': 'system', 'content': prompt_system},
+                {'role': 'user', 'content': prompt_user}
             ],
             model='llama-3.3-70b-versatile',
             max_tokens=300,
             temperature=0.0,
         )
-        return completion.choices[0].message.content.strip()
-    except Exception:
-        return english.upper()
+        result = completion.choices[0].message.content.strip()
+        if result:
+            return result
+    except Exception as groq_err:
+        print(f'Groq gloss failed: {groq_err}')
+
+    # Fall back to Gemini
+    if gemini_model:
+        try:
+            response = gemini_model.generate_content(
+                f'{prompt_system}\n\n{prompt_user}'
+            )
+            result = response.text.strip()
+            if result:
+                return result
+        except Exception as gemini_err:
+            print(f'Gemini gloss failed: {gemini_err}')
+
+    return english.upper()
     
 
 

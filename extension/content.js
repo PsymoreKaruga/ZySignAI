@@ -146,7 +146,9 @@
       let transcript = null
 
       try {
-        const jsonRes = await fetch(enTrack.baseUrl + '&fmt=json3')
+        // Add lang parameter to ensure we get English
+        const captionUrl = enTrack.baseUrl + '&fmt=json3&lang=en'
+        const jsonRes = await fetch(captionUrl)
         const text = await jsonRes.text()
         if (!text || text.trim() === '') throw new Error('Empty response')
         const jsonData = JSON.parse(text)
