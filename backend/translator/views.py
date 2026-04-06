@@ -1,6 +1,5 @@
 import json
 import os
-import re
 import tempfile
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -22,6 +21,53 @@ except Exception:
     pass
 
 
+# ── HELPER — defined FIRST so all views below can use it ─────────────
+
+def get_gloss(english: str, language: str) -> str:
+    """Try Groq first, fall back to Gemini, fall back to uppercase"""
+    prompt_system = (
+        'You are an expert sign language translator. '
+        'Convert English text into Sign Language Gloss notation. '
+        'Rules: Use ALL CAPS. Remove articles (a, an, the). '
+        'Remove helper verbs (am, is, are, was, were). '
+        'Use present tense. Output ONLY the glossed text — nothing else.'
+    )
+    prompt_user = f'Translate to {language} Gloss: {english}'
+
+    # Try Groq first
+    try:
+        completion = groq_client.chat.completions.create(
+            messages=[
+                {'role': 'system', 'content': prompt_system},
+                {'role': 'user', 'content': prompt_user}
+            ],
+            model='llama-3.3-70b-versatile',
+            max_tokens=300,
+            temperature=0.0,
+        )
+        result = completion.choices[0].message.content.strip()
+        if result:
+            return result
+    except Exception as groq_err:
+        print(f'Groq gloss failed: {groq_err}')
+
+    # Fall back to Gemini
+    if gemini_model:
+        try:
+            response = gemini_model.generate_content(
+                f'{prompt_system}\n\n{prompt_user}'
+            )
+            result = response.text.strip()
+            if result:
+                return result
+        except Exception as gemini_err:
+            print(f'Gemini gloss failed: {gemini_err}')
+
+    return english.upper()
+
+
+# ── VIEWS ─────────────────────────────────────────────────────────────
+
 def health(request):
     return JsonResponse({
         'status': 'ok',
@@ -35,6 +81,25 @@ def health(request):
 
 @csrf_exempt
 @require_http_methods(['POST'])
+def gloss_text(request):
+    try:
+        body = json.loads(request.body)
+        text = body.get('text', '').strip()
+        language = body.get('language', 'ASL')
+        if not text:
+            return JsonResponse({'error': 'No text'}, status=400)
+        gloss = get_gloss(text, language)
+        return JsonResponse({
+            'success': True,
+            'gloss': gloss,
+            'language': language
+        })
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
 def youtube_captions(request):
     try:
         body = json.loads(request.body)
@@ -44,7 +109,6 @@ def youtube_captions(request):
         if not video_id:
             return JsonResponse({'error': 'No video ID provided'}, status=400)
 
-        # Fetch captions
         try:
             from youtube_transcript_api import YouTubeTranscriptApi
             transcript = None
@@ -77,23 +141,13 @@ def youtube_captions(request):
                 'error': f'Caption error: {str(e)[:80]}'
             }, status=500)
 
-        # --- KEY FIX: batch ALL captions into ONE Groq call ---
-        # Instead of calling Groq 50+ times, call it ONCE with all text
-        # Then split the glosses back to each segment
-
-        # Group captions into larger batches of 10
+        glossed = []
         batch_size = 10
-        batches = []
         for i in range(0, len(transcript), batch_size):
             batch = transcript[i:i + batch_size]
-            combined = ' | '.join([
+            combined = ' '.join([
                 s['text'].replace('\n', ' ') for s in batch
             ])
-            batches.append((i, batch, combined))
-
-        # Call Groq once per batch of 10 (much faster)
-        glossed = []
-        for batch_idx, (start_i, batch, combined) in enumerate(batches):
             try:
                 gloss = get_gloss(combined, language)
             except Exception:
@@ -114,62 +168,6 @@ def youtube_captions(request):
             'total': len(glossed),
         })
 
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-
-
-def fetch_captions(video_id: str):
-    """Fetch YouTube captions using youtube-transcript-api"""
-    try:
-        from youtube_transcript_api import YouTubeTranscriptApi
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
-        return transcript
-    except Exception:
-        return None
-
-
-def gloss_captions(captions: list, language: str) -> list:
-    """Convert caption segments to sign language gloss"""
-    glossed = []
-
-    # Process in batches of 5 to save API calls
-    batch_size = 5
-    for i in range(0, len(captions), batch_size):
-        batch = captions[i:i + batch_size]
-        combined = ' '.join([seg['text'] for seg in batch])
-
-        try:
-            gloss = get_gloss(combined, language)
-        except Exception:
-            gloss = combined.upper()
-
-        # Distribute gloss across segments in batch
-        for j, seg in enumerate(batch):
-            glossed.append({
-                'start': seg['start'],
-                'duration': seg['duration'],
-                'text': seg['text'],
-                'gloss': gloss if j == 0 else '',
-            })
-
-    return glossed
-
-
-@csrf_exempt
-@require_http_methods(['POST'])
-def gloss_text(request):
-    try:
-        body = json.loads(request.body)
-        text = body.get('text', '').strip()
-        language = body.get('language', 'ASL')
-        if not text:
-            return JsonResponse({'error': 'No text'}, status=400)
-        gloss = get_gloss(text, language)
-        return JsonResponse({
-            'success': True,
-            'gloss': gloss,
-            'language': language
-        })
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
@@ -212,8 +210,10 @@ def transcribe_file(request):
             tmp_path = tmp.name
 
         try:
-            # Try Groq first
             transcript_text = None
+            segments = []
+
+            # Try Groq first
             try:
                 with open(tmp_path, 'rb') as f:
                     response = groq_client.audio.transcriptions.create(
@@ -223,7 +223,6 @@ def transcribe_file(request):
                         language='en'
                     )
                 transcript_text = response.text.strip()
-                segments = []
                 if hasattr(response, 'segments') and response.segments:
                     for seg in response.segments:
                         segments.append({
@@ -233,25 +232,27 @@ def transcribe_file(request):
                         })
             except Exception as groq_err:
                 print(f'Groq transcription failed: {groq_err}')
-                segments = []
 
-            # Fall back to Gemini for transcription if Groq failed
+            # Fall back to Gemini
             if not transcript_text and gemini_model:
                 try:
+                    import base64
                     with open(tmp_path, 'rb') as f:
                         audio_data = f.read()
-                    import base64
                     b64 = base64.b64encode(audio_data).decode()
                     response = gemini_model.generate_content([
                         {'mime_type': mime, 'data': b64},
-                        'Transcribe this audio accurately. Output only the transcribed text.'
+                        'Transcribe this audio. Output only the spoken text.'
                     ])
                     transcript_text = response.text.strip()
                 except Exception as gemini_err:
                     print(f'Gemini transcription failed: {gemini_err}')
 
             if not transcript_text:
-                return JsonResponse({'error': 'No speech detected'}, status=400)
+                return JsonResponse(
+                    {'error': 'No speech detected in file'},
+                    status=400
+                )
 
             gloss = get_gloss(transcript_text, language)
 
@@ -273,52 +274,3 @@ def transcribe_file(request):
 
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
-
-
-def get_gloss(english: str, language: str) -> str:
-    """Try Groq first, fall back to Gemini"""
-    prompt_system = (
-        'You are an expert sign language translator. '
-        'Convert English text into Sign Language Gloss notation. '
-        'Rules: Use ALL CAPS. Remove articles (a, an, the). '
-        'Remove helper verbs (am, is, are, was, were). '
-        'Use present tense. Output ONLY the glossed text — nothing else.'
-    )
-    prompt_user = f'Translate to {language} Gloss: {english}'
-
-    # Try Groq first
-    try:
-        completion = groq_client.chat.completions.create(
-            messages=[
-                {'role': 'system', 'content': prompt_system},
-                {'role': 'user', 'content': prompt_user}
-            ],
-            model='llama-3.3-70b-versatile',
-            max_tokens=300,
-            temperature=0.0,
-        )
-        result = completion.choices[0].message.content.strip()
-        if result:
-            return result
-    except Exception as groq_err:
-        print(f'Groq gloss failed: {groq_err}')
-
-    # Fall back to Gemini
-    if gemini_model:
-        try:
-            response = gemini_model.generate_content(
-                f'{prompt_system}\n\n{prompt_user}'
-            )
-            result = response.text.strip()
-            if result:
-                return result
-        except Exception as gemini_err:
-            print(f'Gemini gloss failed: {gemini_err}')
-
-    return english.upper()
-    
-
-
-
-
-
