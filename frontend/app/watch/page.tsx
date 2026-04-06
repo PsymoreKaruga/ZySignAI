@@ -23,6 +23,76 @@ const SAMPLE_VIDEOS = [
   { id: 'H14bBuluwB8', title: 'TED Talk — Inside the mind of a master procrastinator' },
 ]
 
+async function fetchCaptionsFromBrowser(videoId: string) {
+  try {
+    const pageRes = await fetch(
+      `https://www.youtube.com/watch?v=${videoId}&hl=en`,
+      { credentials: 'include' }
+    )
+    const html = await pageRes.text()
+
+    const match = html.match(/"captionTracks":(\[.*?\])/)
+    if (!match) return null
+
+    let captionTracks: any[] = []
+    try {
+      captionTracks = JSON.parse(match[1])
+    } catch {
+      return null
+    }
+
+    if (!captionTracks.length) return null
+
+    const enTrack =
+      captionTracks.find((t: any) => t.languageCode === 'en' && !t.kind) ||
+      captionTracks.find((t: any) => t.languageCode === 'en-US') ||
+      captionTracks.find((t: any) => t.languageCode === 'en-GB') ||
+      captionTracks.find((t: any) => t.languageCode?.startsWith('en'))
+
+    if (!enTrack?.baseUrl) return null
+
+    // Try JSON format
+    try {
+      const jsonRes = await fetch(enTrack.baseUrl + '&fmt=json3&lang=en')
+      const text = await jsonRes.text()
+      if (!text) throw new Error('Empty')
+      const data = JSON.parse(text)
+      if (data.events) {
+        return data.events
+          .filter((e: any) => e.segs && e.tStartMs !== undefined)
+          .map((e: any) => ({
+            start: e.tStartMs / 1000,
+            duration: (e.dDurationMs || 3000) / 1000,
+            text: e.segs.map((s: any) => s.utf8 || '').join('')
+              .replace(/\n/g, ' ').trim()
+          }))
+          .filter((e: any) => e.text)
+      }
+    } catch {}
+
+    // Try XML format
+    try {
+      const xmlRes = await fetch(enTrack.baseUrl)
+      const xmlText = await xmlRes.text()
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(xmlText, 'text/xml')
+      const nodes = doc.querySelectorAll('text')
+      return Array.from(nodes).map((node: any) => ({
+        start: parseFloat(node.getAttribute('start') || '0'),
+        duration: parseFloat(node.getAttribute('dur') || '3'),
+        text: node.textContent
+          .replace(/&amp;/g, '&').replace(/&#39;/g, "'")
+          .replace(/&quot;/g, '"').replace(/\n/g, ' ').trim()
+      })).filter((e: any) => e.text)
+    } catch {}
+
+    return null
+  } catch (err) {
+    console.log('Caption fetch failed:', err)
+    return null
+  }
+}
+
 function extractVideoId(input: string): string | null {
   const patterns = [
     /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/,
@@ -45,6 +115,7 @@ export default function WatchPage() {
   const [error, setError] = useState('')
   const [playerTime, setPlayerTime] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
+  const [loadingStep, setLoadingStep] = useState('')
   const playerRef = useRef<any>(null)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
   const color = LANGUAGE_COLORS[language]
@@ -92,28 +163,74 @@ export default function WatchPage() {
     setError('')
     setCaptions([])
     setCurrentCaption(null)
+    setLoadingStep('')
 
     try {
-      const res = await fetch(
-        'https://zysignai-backend.onrender.com/api/youtube/',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ video_id: id, language }),
-        }
-      )
-      const data = await res.json()
+      setLoadingStep('Fetching captions from YouTube...')
 
-      if (data.error) {
-        setError(data.error)
-      } else {
-        setCaptions(data.captions)
+      // Fetch captions directly from browser — bypass server IP blocking
+      const captions = await fetchCaptionsFromBrowser(id)
+
+      if (!captions || captions.length === 0) {
+        setError('No English captions found. Try a video with CC enabled.')
+        setVideoId(null)
+        setLoading(false)
+        setLoadingStep('')
+        return
       }
+
+      setLoadingStep(`Generating ${language} sign glosses...`)
+
+      // Send text to backend for glossing only
+      const glossed: Caption[] = []
+      const batchSize = 10
+
+      for (let i = 0; i < captions.length; i += batchSize) {
+        const batch = captions.slice(i, i + batchSize)
+        const combined = batch.map((s: any) => s.text).join(' | ')
+
+        try {
+          const res = await fetch(
+            'https://zysignai-backend.onrender.com/api/gloss/',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: combined, language }),
+            }
+          )
+          const data = await res.json()
+          const gloss = data.gloss || combined.toUpperCase()
+
+          for (let j = 0; j < batch.length; j++) {
+            glossed.push({
+              start: batch[j].start,
+              duration: batch[j].duration,
+              text: batch[j].text,
+              gloss: j === 0 ? gloss : '',
+            })
+          }
+        } catch {
+          for (let j = 0; j < batch.length; j++) {
+            glossed.push({
+              start: batch[j].start,
+              duration: batch[j].duration,
+              text: batch[j].text,
+              gloss: j === 0 ? combined.toUpperCase() : '',
+            })
+          }
+        }
+      }
+
+      setCaptions(glossed)
+      setTimeout(() => initPlayer(id), 300)
+
     } catch {
-      setError('Cannot connect to backend — try again in 30 seconds')
+      setError('Failed to load video. Try again.')
+      setVideoId(null)
     }
 
     setLoading(false)
+    setLoadingStep('')
   }
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -269,7 +386,7 @@ export default function WatchPage() {
           <div className="text-center py-8">
             <div className="w-8 h-8 border-2 border-gray-700 border-t-emerald-400 rounded-full animate-spin mx-auto mb-3"/>
             <p className="text-gray-500 text-sm">
-              Fetching captions and generating sign language...
+              {loadingStep || 'Fetching captions and generating sign language...'}
             </p>
           </div>
         )}
